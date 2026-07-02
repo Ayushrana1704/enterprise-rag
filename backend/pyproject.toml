@@ -11,6 +11,8 @@ dependencies = [
     "python-dotenv",
     "python-multipart",
     "loguru",
+    "bcrypt",
+    "python-jose[cryptography]",
 ]
 
 [build-system]
