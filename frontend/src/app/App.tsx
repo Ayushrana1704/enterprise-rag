@@ -1,182 +1,24 @@
-import { Activity, Boxes, BrainCircuit, Database, Server } from "lucide-react"
-import { useEffect, useMemo, useState } from "react"
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 
-import { cn } from "@/lib/utils"
-
-type BackendState = "checking" | "connected" | "disconnected"
-
-type StatusTone = "green" | "yellow" | "red" | "blue"
-
-type StatusCardProps = {
-  title: string
-  description: string
-  status: string
-  tone: StatusTone
-  icon: React.ComponentType<{ className?: string }>
-}
-
-const API_REQUEST_URL = import.meta.env.VITE_API_BASE_URL ?? "/api"
-const API_DISPLAY_URL = import.meta.env.VITE_API_DISPLAY_URL ?? "http://127.0.0.1:8000"
-const APP_VERSION = import.meta.env.VITE_APP_VERSION ?? "0.1.0"
-const APP_ENVIRONMENT = import.meta.env.MODE
-
-const toneClasses: Record<StatusTone, string> = {
-  green: "bg-emerald-500 shadow-emerald-500/30",
-  yellow: "bg-amber-400 shadow-amber-400/30",
-  red: "bg-rose-500 shadow-rose-500/30",
-  blue: "bg-blue-500 shadow-blue-500/30",
-}
-
-function StatusCard({ title, description, status, tone, icon: Icon }: StatusCardProps) {
-  return (
-    <article className="rounded-xl border bg-card p-5 text-card-foreground shadow-enterprise transition hover:-translate-y-0.5 hover:shadow-xl">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-lg bg-secondary">
-            <Icon className="h-5 w-5 text-foreground" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold">{title}</h2>
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
-          </div>
-        </div>
-        <span className={cn("h-3 w-3 rounded-full shadow-lg", toneClasses[tone])} />
-      </div>
-      <div className="mt-6 rounded-lg bg-muted px-4 py-3">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Status</p>
-        <p className="mt-1 text-sm font-semibold">{status}</p>
-      </div>
-    </article>
-  )
-}
+import { AuthProvider } from "@/features/auth/AuthProvider"
+import { LoginPage } from "@/features/auth/LoginPage"
+import { ProtectedRoute } from "@/features/auth/ProtectedRoute"
+import { UnauthorizedPage } from "@/features/auth/UnauthorizedPage"
+import { DashboardPage } from "@/features/dashboard/DashboardPage"
 
 export function App() {
-  const [backendState, setBackendState] = useState<BackendState>("checking")
-
-  useEffect(() => {
-    const controller = new AbortController()
-
-    async function checkBackend() {
-      try {
-        const response = await fetch(`${API_REQUEST_URL}/health`, {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        })
-
-        setBackendState(response.ok ? "connected" : "disconnected")
-      } catch {
-        if (!controller.signal.aborted) {
-          setBackendState("disconnected")
-        }
-      }
-    }
-
-    checkBackend()
-
-    return () => controller.abort()
-  }, [])
-
-  const backendStatus = useMemo(() => {
-    if (backendState === "checking") {
-      return { label: "Checking", tone: "blue" as const }
-    }
-
-    if (backendState === "connected") {
-      return { label: "Connected", tone: "green" as const }
-    }
-
-    return { label: "Disconnected", tone: "red" as const }
-  }, [backendState])
-
   return (
-    <main className="min-h-screen bg-background">
-      <section className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-8 sm:px-8 lg:px-10">
-        <header className="rounded-2xl border bg-card p-6 shadow-enterprise sm:p-8">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-            <div className="max-w-3xl">
-              <div className="mb-5 inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs font-medium text-muted-foreground">
-                <Activity className="h-3.5 w-3.5 text-primary" />
-                Enterprise AI Knowledge Assistant
-              </div>
-              <h1 className="text-3xl font-semibold tracking-normal text-foreground sm:text-5xl">
-                Production-Ready Enterprise RAG Platform
-              </h1>
-              <p className="mt-4 max-w-2xl text-base leading-7 text-muted-foreground">
-                Operational foundation for secure knowledge retrieval, observability, and future AI
-                orchestration.
-              </p>
-            </div>
-            <div className="rounded-xl border bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Backend
-              </p>
-              <div className="mt-2 flex items-center gap-2">
-                <span
-                  className={cn("h-2.5 w-2.5 rounded-full shadow-md", toneClasses[backendStatus.tone])}
-                />
-                <span className="text-sm font-semibold">{backendStatus.label}</span>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <section className="mt-8">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-xl font-semibold">System Status</h2>
-            <p className="text-sm text-muted-foreground">Live foundation checks</p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatusCard
-              title="Backend"
-              description="FastAPI service"
-              status={backendStatus.label}
-              tone={backendStatus.tone}
-              icon={Server}
-            />
-            <StatusCard
-              title="PostgreSQL"
-              description="Relational persistence"
-              status="Coming Soon"
-              tone="yellow"
-              icon={Database}
-            />
-            <StatusCard
-              title="Qdrant"
-              description="Vector database"
-              status="Coming Soon"
-              tone="yellow"
-              icon={Boxes}
-            />
-            <StatusCard
-              title="AI Service"
-              description="LangChain and LangGraph"
-              status="Coming Soon"
-              tone="yellow"
-              icon={BrainCircuit}
-            />
-          </div>
-        </section>
-
-        <footer className="mt-auto pt-8">
-          <div className="grid gap-3 rounded-xl border bg-card p-4 text-sm shadow-enterprise md:grid-cols-3">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Version</p>
-              <p className="mt-1 font-semibold">{APP_VERSION}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Environment
-              </p>
-              <p className="mt-1 font-semibold">{APP_ENVIRONMENT}</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">API URL</p>
-              <p className="mt-1 break-all font-semibold">{API_DISPLAY_URL}</p>
-            </div>
-          </div>
-        </footer>
-      </section>
-    </main>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="/" element={<DashboardPage />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   )
 }
