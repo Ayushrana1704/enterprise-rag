@@ -7,19 +7,40 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = Field(default="Enterprise AI Knowledge Assistant", alias="APP_NAME")
+
     app_env: Literal["local", "dev", "test", "staging", "prod"] = Field(
         default="local",
         alias="APP_ENV",
     )
+
     app_debug: bool = Field(default=False, alias="APP_DEBUG")
     app_log_level: str = Field(default="INFO", alias="APP_LOG_LEVEL")
+
     backend_host: str = Field(default="0.0.0.0", alias="BACKEND_HOST")
     backend_port: int = Field(default=8000, alias="BACKEND_PORT")
-    jwt_secret_key: str = Field(default="change-me-in-production", alias="JWT_SECRET_KEY")
-    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+
+    jwt_secret_key: str = Field(
+        default="change-me-in-production",
+        alias="JWT_SECRET_KEY",
+    )
+
+    jwt_algorithm: str = Field(
+        default="HS256",
+        alias="JWT_ALGORITHM",
+    )
+
     jwt_access_token_expire_minutes: int = Field(
         default=30,
         alias="JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
+    )
+
+    # PostgreSQL Configuration
+    database_host: str = Field(default="localhost", alias="DATABASE_HOST")
+    database_port: int = Field(default=5432, alias="DATABASE_PORT")
+    database_name: str = Field(default="enterprise_ai", alias="DATABASE_NAME")
+    database_url: str = Field(
+        default="postgresql+psycopg://enterprise:enterprise123@localhost:5432/enterprise_ai",
+        alias="DATABASE_URL",
     )
 
     model_config = SettingsConfigDict(
