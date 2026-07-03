@@ -1,10 +1,19 @@
-from app.domain.auth.user import User
-from app.infrastructure.security.password import verify_password
+from app.infrastructure.repositories.user_repository import UserRepository
 
 
 class AuthenticationService:
-    def authenticate(self, user: User | None, password: str) -> User | None:
-        if user is None or not user.is_active:
+    def __init__(self, repository: UserRepository):
+        self.repository = repository
+
+    def authenticate(self, email: str, password: str):
+        from app.infrastructure.security.password import verify_password
+
+        user = self.repository.get_by_email(email)
+
+        if user is None:
+            return None
+
+        if not user.is_active:
             return None
 
         if not verify_password(password, user.hashed_password):

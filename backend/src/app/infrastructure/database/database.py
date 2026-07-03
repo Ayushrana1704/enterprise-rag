@@ -14,3 +14,6 @@ engine = create_engine(
 
 class Base(DeclarativeBase):
     pass
+
+
+import app.infrastructure.database.models

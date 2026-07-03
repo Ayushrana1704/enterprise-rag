@@ -46,6 +46,6 @@ def build_authorized_response(
         "user": {
             "email": user.email,
             "name": user.name,
-            "role": user.role.value,
+            "role": user.role,
         },
     }

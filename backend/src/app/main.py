@@ -5,7 +5,7 @@ from app.infrastructure.logging.config import configure_logging
 from app.presentation.api.auth import router as auth_router
 from app.presentation.api.health import router as health_router
 from app.presentation.api.rbac import router as rbac_router
-
+from app.presentation.api.documents import router as documents_router
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -24,6 +24,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(health_router)
     app.include_router(auth_router, prefix="/auth")
     app.include_router(rbac_router)
+    app.include_router(documents_router, prefix="/documents")
 
 
 settings: Settings = get_settings()
