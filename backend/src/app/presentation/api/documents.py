@@ -4,10 +4,16 @@ import fitz
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+from app.application.rag.embedding_service import EmbeddingService
+from app.infrastructure.vector_store.qdrant_service import QdrantService
+
 router = APIRouter(tags=["Documents"])
 
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+embedding_service = EmbeddingService()
+qdrant_service = QdrantService()
+qdrant_service.create_collection()
 
 
 @router.post("/upload")
@@ -38,6 +44,12 @@ async def upload_document(file: UploadFile = File(...)):
     )
 
     chunks = text_splitter.split_text(text)
+    embeddings = embedding_service.embed_documents(chunks)
+    qdrant_service.store_embeddings(
+        embeddings=embeddings,
+        chunks=chunks,
+        filename=file.filename,
+    )
 
     return {
         "filename": file.filename,

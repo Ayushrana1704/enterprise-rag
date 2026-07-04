@@ -38,9 +38,48 @@ class Settings(BaseSettings):
     database_host: str = Field(default="localhost", alias="DATABASE_HOST")
     database_port: int = Field(default=5432, alias="DATABASE_PORT")
     database_name: str = Field(default="enterprise_ai", alias="DATABASE_NAME")
+
     database_url: str = Field(
         default="postgresql+psycopg://enterprise:enterprise123@localhost:5432/enterprise_ai",
         alias="DATABASE_URL",
+    )
+
+    # Qdrant Configuration
+    qdrant_host: str = Field(
+        default="localhost",
+        alias="QDRANT_HOST",
+    )
+
+    qdrant_port: int = Field(
+        default=6333,
+        alias="QDRANT_PORT",
+    )
+
+    qdrant_collection_name: str = Field(
+        default="documents",
+        alias="QDRANT_COLLECTION_NAME",
+    )
+
+    # Embedding Model
+    embedding_model_name: str = Field(
+        default="BAAI/bge-m3",
+        alias="EMBEDDING_MODEL_NAME",
+    )
+
+    # LLM Configuration
+    llm_api_url: str = Field(
+        default="http://127.0.0.1:1234/v1/chat/completions",
+        alias="LLM_API_URL",
+    )
+
+    llm_model_name: str = Field(
+        default="gemma-3-1b-instruct",
+        alias="LLM_MODEL_NAME",
+    )
+
+    llm_temperature: float = Field(
+        default=0.0,
+        alias="LLM_TEMPERATURE",
     )
 
     model_config = SettingsConfigDict(
