@@ -3,17 +3,14 @@
  *
  * Responsibilities:
  *  - Click-to-select (hidden <input type="file">)
- *  - Drag & drop
- *  - Visual drag-over feedback
+ *  - Drag & drop with animated feedback
+ *  - Visual drag-over state
  *
- * This component does NOT validate the file type — validation is in useUpload.
- * It passes whatever the user selects to onFileSelect and the hook decides.
+ * Does NOT validate file type -- validation is in useUpload.
  */
 
 import { useCallback, useRef, useState } from "react"
-
-import { UploadCloud } from "lucide-react"
-
+import { FileUp, UploadCloud } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface UploadDropzoneProps {
@@ -82,33 +79,42 @@ export function UploadDropzone({
       onDrop={handleDrop}
       className={cn(
         "flex cursor-pointer select-none flex-col items-center justify-center gap-3",
-        "rounded-lg border-2 border-dashed px-6 py-10 text-center",
-        "transition-colors duration-150 outline-none",
+        "rounded-xl border-2 border-dashed px-6 py-10 text-center",
+        "outline-none transition-all duration-200",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         isDragging
-          ? "border-primary bg-primary/5"
+          ? "scale-[1.02] border-primary bg-primary/8 shadow-lg shadow-primary/10"
           : "border-border bg-muted/30 hover:border-primary/50 hover:bg-muted/50",
         disabled && "pointer-events-none opacity-50",
       )}
     >
-      <UploadCloud
+      {/* Icon — animates on drag */}
+      <div
         className={cn(
-          "h-9 w-9 transition-colors",
-          isDragging ? "text-primary" : "text-muted-foreground",
+          "flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-200",
+          isDragging ? "scale-110 bg-primary/15" : "bg-muted",
         )}
         aria-hidden="true"
-      />
-
-      <div>
-        <p className="text-sm font-medium text-foreground">
-          {isDragging ? "Drop to upload" : "Click or drag & drop"}
-        </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">PDF files only</p>
+      >
+        {isDragging ? (
+          <FileUp className="h-6 w-6 text-primary animate-bounce" />
+        ) : (
+          <UploadCloud className="h-6 w-6 text-muted-foreground/60" />
+        )}
       </div>
 
-      {/* Visually hidden file input — triggered programmatically.
-          Value is reset after each selection so the same file can be
-          re-selected (e.g. after a validation error or failed upload). */}
+      <div>
+        <p
+          className={cn(
+            "text-sm font-medium transition-colors",
+            isDragging ? "text-primary" : "text-foreground",
+          )}
+        >
+          {isDragging ? "Drop to upload" : "Click or drag & drop"}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">PDF files only · max 50 MB</p>
+      </div>
+
       <input
         ref={inputRef}
         type="file"

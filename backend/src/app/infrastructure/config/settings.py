@@ -48,14 +48,68 @@ class Settings(BaseSettings):
     # Embedding
     embedding_model_name: str = Field(default="BAAI/bge-m3", alias="EMBEDDING_MODEL_NAME")
 
+    # ---------------------------------------------------------------------------
     # LLM
-    llm_api_url: str = Field(
-        default="http://127.0.0.1:1234/v1/chat/completions",
-        alias="LLM_API_URL",
+    #
+    # LLM_PROVIDER   -- informational label; not used in request logic but useful
+    #                   for logging and health-check display.
+    #                   Values: "lm_studio" | "groq" | any string
+    #
+    # LLM_BASE_URL   -- OpenAI-compatible base URL *without* a trailing slash.
+    #                   The completions endpoint is built as:
+    #                       LLM_BASE_URL + "/chat/completions"
+    #                   The models endpoint (used by the health check) is:
+    #                       LLM_BASE_URL + "/models"
+    #
+    #   LM Studio:  http://127.0.0.1:1234/v1
+    #   Groq:       https://api.groq.com/openai/v1
+    #
+    # LLM_API_KEY    -- Bearer token for authenticated providers (e.g. Groq).
+    #                   Leave empty or unset for local providers that require no
+    #                   authentication (e.g. LM Studio).
+    #                   When non-empty, the value is sent as:
+    #                       Authorization: Bearer <LLM_API_KEY>
+    # ---------------------------------------------------------------------------
+    llm_provider: str = Field(default="lm_studio", alias="LLM_PROVIDER")
+
+    llm_base_url: str = Field(
+        default="http://127.0.0.1:1234/v1",
+        alias="LLM_BASE_URL",
     )
+
+    llm_api_key: str = Field(default="", alias="LLM_API_KEY")
+
     llm_model_name: str = Field(default="gemma-3-1b-instruct", alias="LLM_MODEL_NAME")
     llm_temperature: float = Field(default=0.0, alias="LLM_TEMPERATURE")
     llm_request_timeout_seconds: int = Field(default=60, alias="LLM_REQUEST_TIMEOUT_SECONDS")
+
+    # CORS -- comma-separated origins allowed to call the API.
+    # Override via CORS_ORIGINS env var in non-local environments.
+    cors_origins: list[str] = Field(
+        default=["http://localhost:5173", "http://localhost:3000", "http://localhost:4173"],
+        alias="CORS_ORIGINS",
+    )
+
+    # BM25
+    bm25_corpus_path: str = Field(default="bm25_corpus.json", alias="BM25_CORPUS_PATH")
+
+    # Hybrid search
+    # Set HYBRID_SEARCH_ENABLED=false to fall back to dense-only retrieval
+    # without redeploying -- useful for A/B testing or incident response.
+    hybrid_search_enabled: bool = Field(default=True, alias="HYBRID_SEARCH_ENABLED")
+
+    # Reciprocal Rank Fusion constant (Cormack et al. 2009).
+    # Lower values amplify top-rank advantage; 60 is the empirically validated default.
+    rrf_k: int = Field(default=60, alias="RRF_K")
+
+    # Each retriever fetches limit x this factor before fusion.
+    # More candidates improve deduplication quality at the cost of latency.
+    hybrid_oversample_factor: int = Field(default=2, alias="HYBRID_OVERSAMPLE_FACTOR")
+
+    # Per-retriever weights -- reserved for weighted RRF (Phase 5.5D+).
+    # Currently stored but not applied to the fusion formula.
+    dense_weight: float = Field(default=1.0, alias="DENSE_WEIGHT")
+    sparse_weight: float = Field(default=1.0, alias="SPARSE_WEIGHT")
 
     model_config = SettingsConfigDict(
         env_file=".env",

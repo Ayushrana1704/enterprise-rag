@@ -1,0 +1,95 @@
+# =============================================================================
+# .dockerignore -- Backend Docker build context exclusions
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Version control
+# The .git directory is large and irrelevant to the build.
+# Including it would bust the cache on every commit even if source is unchanged.
+# -----------------------------------------------------------------------------
+.git
+.gitignore
+.gitattributes
+
+# -----------------------------------------------------------------------------
+# Python artefacts
+# Bytecode and caches are platform-specific (Windows .pyc != Linux .pyc)
+# and must never be baked into a Linux image built on Windows.
+# -----------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# -----------------------------------------------------------------------------
+# Virtual environments
+# The dev venv contains Windows wheels (win_amd64) that cannot run on Linux.
+# Excluding it also saves ~3 GB of build context transfer time.
+# -----------------------------------------------------------------------------
+.venv/
+venv/
+env/
+
+# -----------------------------------------------------------------------------
+# Secrets -- NEVER bake into an image
+# .env contains DATABASE_URL, JWT_SECRET_KEY, API keys, etc.
+# All secrets must be injected at runtime via environment variables.
+# .env.example is safe to include (no real values).
+# -----------------------------------------------------------------------------
+.env
+.env.local
+.env.production
+
+# -----------------------------------------------------------------------------
+# Runtime data -- must live on a persistent volume, not inside the image
+#
+# uploads/        Raw PDFs uploaded by users. If baked in, they'd be stale
+#                 and not writable at runtime. Mount a disk at /app/uploads.
+#
+# bm25_corpus.json  In-memory BM25 index backing store. Starts empty on a
+#                 fresh deploy; built up as users upload documents. Baking
+#                 the dev corpus in would give different users different data.
+#                 Mount a disk and set BM25_CORPUS_PATH=/data/bm25_corpus.json.
+# -----------------------------------------------------------------------------
+uploads/
+bm25_corpus.json
+
+# -----------------------------------------------------------------------------
+# IDE and editor files
+# -----------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# -----------------------------------------------------------------------------
+# OS artefacts
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -----------------------------------------------------------------------------
+# Test and dev-only files
+# Not needed at runtime; excluding keeps the image and build context small.
+# -----------------------------------------------------------------------------
+test_*.py
+tests/
+conftest.py
+
+# -----------------------------------------------------------------------------
+# Documentation
+# Markdown files don't affect runtime behaviour.
+# -----------------------------------------------------------------------------
+*.md
+docs/
+
+# -----------------------------------------------------------------------------
+# Temporary and log files
+# -----------------------------------------------------------------------------
+*.log
+*.tmp
+*.bak

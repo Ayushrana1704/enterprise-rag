@@ -7,7 +7,7 @@
  *  - Typed error handling via ApiError
  *  - Future: token refresh, request interceptors, retry logic
  *
- * All feature API modules (rag-api, documents-api, …) call useApiClient()
+ * All feature API modules (rag-api, documents-api, ...) call useApiClient()
  * to get a client bound to the current session token. Auth-bootstrap calls
  * (login, session restore) are handled separately in auth-api.ts because
  * they run before a token exists.
@@ -18,6 +18,8 @@
  *   const result  = await api.post<ResponseType>("/some/path", { key: "value" })
  *   const result  = await api.postForm<ResponseType>("/some/path", formData)
  */
+
+import { useMemo } from "react"
 
 import { useAuth } from "@/features/auth/AuthProvider"
 import { API_REQUEST_URL } from "@/shared/config"
@@ -37,7 +39,7 @@ export class ApiError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Internal transport — not exported; callers use the hook below
+// Internal transport -- not exported; callers use the hook below
 // ---------------------------------------------------------------------------
 
 async function request<T>(
@@ -63,6 +65,11 @@ async function request<T>(
     )
   }
 
+  // 204 No Content (e.g. DELETE) has no body -- calling .json() would throw.
+  if (response.status === 204) {
+    return undefined as unknown as T
+  }
+
   return response.json() as Promise<T>
 }
 
@@ -81,8 +88,13 @@ export function useApiClient() {
   const { session } = useAuth()
   const token = session?.accessToken ?? null
 
-  return {
-    /** Authenticated GET — resolves to parsed JSON. */
+  // useMemo keeps the returned object reference stable across renders.
+  // Without this, every render produces a new object, which invalidates any
+  // useCallback/useEffect that lists `api` as a dependency -- causing an
+  // infinite re-render loop whenever loadConversations or similar callbacks
+  // are used as effect deps.
+  return useMemo(() => ({
+    /** Authenticated GET -- resolves to parsed JSON. */
     get<T>(path: string): Promise<T> {
       return request<T>(path, token, { method: "GET" })
     },
@@ -96,13 +108,63 @@ export function useApiClient() {
       })
     },
 
+    /** Authenticated PATCH with a JSON body. */
+    patch<T>(path: string, body?: unknown): Promise<T> {
+      return request<T>(path, token, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      })
+    },
+
     /**
      * Authenticated POST with a FormData body (file uploads).
-     * Content-Type is intentionally omitted — the browser sets it automatically
+     * Content-Type is intentionally omitted -- the browser sets it automatically
      * with the correct multipart boundary.
      */
     postForm<T>(path: string, formData: FormData): Promise<T> {
       return request<T>(path, token, { method: "POST", body: formData })
     },
-  }
+
+    /**
+     * Authenticated DELETE -- resolves to parsed JSON or void on 204.
+     * Pass the generic argument as void for endpoints that return 204 No Content.
+     */
+    delete<T>(path: string): Promise<T> {
+      return request<T>(path, token, { method: "DELETE" })
+    },
+
+    /**
+     * Authenticated POST returning the raw Response for streaming consumption.
+     *
+     * Unlike post<T>(), this does NOT call response.json(). The caller owns the
+     * response body and reads it incrementally (e.g. via getReader()).
+     * Passes the AbortSignal through so the caller can cancel mid-stream.
+     *
+     * Throws ApiError on non-2xx status so streaming callers share the same
+     * error contract as non-streaming callers.
+     */
+    async stream(path: string, body?: unknown, signal?: AbortSignal): Promise<Response> {
+      const response = await fetch(`${API_REQUEST_URL}${path}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          ...(token !== null ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal,
+      })
+
+      if (!response.ok) {
+        throw new ApiError(
+          response.status,
+          `API error ${response.status}: ${response.statusText}`,
+        )
+      }
+
+      return response
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [token])
 }

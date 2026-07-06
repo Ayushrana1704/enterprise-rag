@@ -31,4 +31,9 @@ export interface Message {
   timestamp: Date
   /** Populated on assistant messages when the backend returns source citations. */
   citations?: Citation[]
+  /**
+   * True while this assistant message is still receiving tokens from the stream.
+   * Undefined (falsy) on all user messages and on completed assistant messages.
+   */
+  isStreaming?: boolean
 }

@@ -4,6 +4,9 @@ from uuid import uuid4
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import (
     Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
     PointStruct,
     ScoredPoint,
     VectorParams,
@@ -58,8 +61,20 @@ class QdrantService:
         embeddings: list[list[float]],
         chunks: list[str],
         filename: str,
+        user_id: str | None = None,
     ) -> None:
-        logger.info("Storing %d embeddings for '%s'", len(chunks), filename)
+        """Upsert chunk embeddings into the collection.
+
+        Each point payload includes ``filename`` and ``text``.
+        When ``user_id`` is provided (authenticated upload), it is stored in
+        the payload so retrieval can be scoped to that user later.
+        Anonymous uploads (``user_id=None``) omit the field entirely, which
+        means they will only surface in unfiltered (anonymous) searches.
+        """
+        logger.info(
+            "Storing %d embeddings for '%s' (user_id=%s)",
+            len(chunks), filename, user_id or "anonymous",
+        )
 
         points = [
             PointStruct(
@@ -68,9 +83,14 @@ class QdrantService:
                 payload={
                     "filename": filename,
                     "text": chunk,
+                    # 1-based position within this file — used for citation display.
+                    "chunk_index": chunk_idx,
+                    **({"user_id": user_id} if user_id is not None else {}),
                 },
             )
-            for embedding, chunk in zip(embeddings, chunks)
+            for chunk_idx, (embedding, chunk) in enumerate(
+                zip(embeddings, chunks), start=1
+            )
         ]
 
         try:
@@ -88,14 +108,40 @@ class QdrantService:
         self,
         query_embedding: list[float],
         limit: int = 5,
+        user_id: str | None = None,
     ) -> list[ScoredPoint]:
-        logger.info("Searching collection '%s' (limit=%d)", self.collection_name, limit)
+        """Search the collection for nearest neighbours.
+
+        When ``user_id`` is provided, applies a native Qdrant payload filter
+        so only points owned by that user are considered.  This runs inside
+        Qdrant's ANN index — no post-retrieval filtering, no over-fetching.
+
+        When ``user_id`` is None (anonymous request), the search is global and
+        returns results from the full collection, preserving backward compat.
+        """
+        query_filter: Filter | None = None
+        if user_id is not None:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="user_id",
+                        match=MatchValue(value=user_id),
+                    )
+                ]
+            )
+
+        log_scope = f"user_id={user_id}" if user_id else "anonymous"
+        logger.info(
+            "Searching collection '%s' (limit=%d, scope=%s)",
+            self.collection_name, limit, log_scope,
+        )
 
         try:
             results = self.client.query_points(
                 collection_name=self.collection_name,
                 query=query_embedding,
                 limit=limit,
+                query_filter=query_filter,
             )
         except Exception as e:
             logger.error("Qdrant search failed in collection '%s': %s", self.collection_name, e)

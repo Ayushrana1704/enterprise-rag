@@ -17,3 +17,4 @@ class Base(DeclarativeBase):
 
 
 import app.infrastructure.database.models
+import app.infrastructure.models.conversation

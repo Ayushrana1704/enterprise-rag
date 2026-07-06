@@ -3,49 +3,78 @@
 @tailwind utilities;
 
 @layer base {
+  /* ── Light theme ──────────────────────────────────────────────────────── */
   :root {
+    /* Layout */
+    --header-h: 3.5rem;   /* 56 px — single source of truth for navbar height */
+
     --background: 210 24% 98%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
     --primary: 217 91% 50%;
     --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
     --accent: 212 96% 92%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
     --ring: 217 91% 50%;
     --radius: 0.75rem;
+
+    /* Sidebar — slightly off-white to distinguish from main content */
+    --sidebar: 210 17% 97%;
+    --sidebar-foreground: 222 47% 11%;
   }
 
+  /* ── Dark theme ───────────────────────────────────────────────────────── */
+  /*
+   * Design spec palette:
+   *   Background  #0F172A  => 222 47% 11%
+   *   Cards       #111827  => 221 39% 11%
+   *   Sidebar     #0B1220  => 220 49% 8%
+   *   Borders     #334155  => 215 25% 27%
+   *   Primary     #3B82F6  => 217 91% 60%
+   */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 47.4% 11.2%;
-    --card-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 222 47% 11%;
+    --foreground: 210 40% 96%;
+    --card: 221 39% 11%;
+    --card-foreground: 210 40% 96%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 222 47% 8%;
+    --secondary: 215 25% 20%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 215 25% 17%;
+    --muted-foreground: 215 20% 58%;
+    --accent: 215 25% 20%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 96%;
+    --border: 215 25% 27%;
+    --input: 215 25% 27%;
+    --ring: 217 91% 60%;
+
+    /* Sidebar — darkest surface, per spec */
+    --sidebar: 220 49% 8%;
+    --sidebar-foreground: 210 40% 96%;
   }
 
+  /* ── Base resets ──────────────────────────────────────────────────────── */
   * {
     @apply border-border;
+  }
+
+  html {
+    /* Smooth theme transitions — only color/background, not layout properties */
+    transition:
+      background-color 200ms ease,
+      color 200ms ease;
   }
 
   body {

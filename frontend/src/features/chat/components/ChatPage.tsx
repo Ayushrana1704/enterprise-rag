@@ -1,73 +1,184 @@
-import { useState } from "react"
-
+import { useCallback, useEffect, useRef, useState } from "react"
 import { FileUp, X } from "lucide-react"
 
-import { cn } from "@/lib/utils"
-import { useChatSession } from "@/features/chat/hooks/useChatSession"
+import { ConversationSidebar } from "@/features/conversations/components/ConversationSidebar"
+import { getConversation } from "@/features/conversations/conversations-api"
+import { useConversations } from "@/features/conversations/hooks/useConversations"
+import type { ConversationMessage } from "@/features/conversations/types"
 import { DocumentUploadPanel } from "@/features/documents/components/DocumentUploadPanel"
+import { cn } from "@/lib/utils"
+import { useApiClient } from "@/shared/api-client"
+import { useToast } from "@/shared/toast/ToastProvider"
 
+import { useChatSession } from "@/features/chat/hooks/useChatSession"
+import type { Citation, Message } from "@/features/chat/types"
 import { ChatLayout } from "./ChatLayout"
 
-/**
- * Chat page entry point.
- *
- * Layout:
- *  - md+ (≥ 768 px): two-column row — chat (flex-1) + upload sidebar (w-80).
- *  - < md (mobile):  chat fills full width; sidebar is a slide-in fixed overlay
- *    triggered by a floating "Upload" pill button.
- *
- * ChatLayout is unchanged — its h-[calc(100vh-4rem)] fills the left column on
- * desktop and the full viewport on mobile.
- */
+// ---------------------------------------------------------------------------
+// Mapper
+// ---------------------------------------------------------------------------
+
+function mapHistoryMessage(m: ConversationMessage): Message {
+  const citations: Citation[] = m.citations.map((c) => ({
+    filename: c.filename,
+    chunkIndex: c.chunkIndex,
+    score: c.score,
+    preview: c.preview,
+  }))
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    timestamp: new Date(m.createdAt),
+    citations: citations.length > 0 ? citations : undefined,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
 export function ChatPage() {
-  const { messages, isLoading, error, sendMessage, clearError } = useChatSession()
+  const api = useApiClient()
+  const { toast } = useToast()
+
+  const {
+    messages,
+    isLoading: chatLoading,
+    error,
+    sendMessage,
+    clearError,
+    cancelGeneration,
+    loadMessages,
+    clearMessages,
+  } = useChatSession()
+
+  const {
+    conversations,
+    selectedConversationId,
+    pinnedIds,
+    isLoading: convsLoading,
+    loadConversations,
+    selectConversation,
+    createConversation,
+    deleteConversation,
+    renameConversation,
+    pinConversation,
+    touchConversation,
+  } = useConversations()
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false)
+
+  useEffect(() => { void loadConversations() }, [loadConversations])
+
+  const prevErrorRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (error !== null && error !== prevErrorRef.current) toast(error, "error")
+    prevErrorRef.current = error ?? null
+  }, [error, toast])
+
+  const handleNewConversation = useCallback(() => {
+    cancelGeneration(); selectConversation(null); clearMessages()
+  }, [cancelGeneration, selectConversation, clearMessages])
+
+  const handleSelectConversation = useCallback(async (id: string) => {
+    cancelGeneration(); selectConversation(id); clearMessages()
+    setIsHistoryLoading(true)
+    try {
+      const detail = await getConversation(api, id)
+      loadMessages(detail.messages.map(mapHistoryMessage))
+    } catch { /* non-fatal */ }
+    finally { setIsHistoryLoading(false) }
+  }, [api, cancelGeneration, selectConversation, clearMessages, loadMessages])
+
+  const handleSendMessage = useCallback(async (content: string) => {
+    let convId = selectedConversationId
+    if (convId === null) {
+      const created = await createConversation(content)
+      if (created === null) return
+      convId = created.id
+    }
+    const completed = await sendMessage(content, convId)
+    if (completed) touchConversation(convId)
+  }, [selectedConversationId, createConversation, sendMessage, touchConversation])
+
+  const handleDeleteConversation = useCallback(async (id: string) => {
+    const wasActive = id === selectedConversationId
+    const ok = await deleteConversation(id)
+    if (ok) {
+      if (wasActive) clearMessages()
+      toast("Conversation deleted.", "success")
+    } else {
+      toast("Failed to delete conversation. Please try again.", "error")
+    }
+  }, [selectedConversationId, deleteConversation, clearMessages, toast])
+
+  const handleRenameConversation = useCallback(async (id: string, title: string): Promise<boolean> => {
+    const ok = await renameConversation(id, title)
+    if (!ok) toast("Failed to rename. Please try again.", "error")
+    return ok
+  }, [renameConversation, toast])
 
   return (
     <>
-      {/* Mobile backdrop — closes sidebar on tap outside */}
+      {/* Mobile backdrop */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-20 bg-black/40 md:hidden"
+          className="fixed inset-0 z-20 bg-black/50 backdrop-blur-sm md:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
         />
       )}
 
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden">
+      <div className="flex h-[calc(100vh-var(--header-h))] overflow-hidden">
+        {/* Conversation sidebar -- desktop only */}
+        <div className="hidden lg:flex">
+          <ConversationSidebar
+            conversations={conversations}
+            selectedConversationId={selectedConversationId}
+            pinnedIds={pinnedIds}
+            isLoading={convsLoading}
+            onNew={handleNewConversation}
+            onSelect={handleSelectConversation}
+            onDelete={handleDeleteConversation}
+            onRename={handleRenameConversation}
+            onPin={pinConversation}
+          />
+        </div>
+
         {/* Chat area */}
         <div className="min-w-0 flex-1">
           <ChatLayout
             messages={messages}
-            onSend={sendMessage}
-            isLoading={isLoading}
+            onSend={handleSendMessage}
+            isLoading={chatLoading}
+            isHistoryLoading={isHistoryLoading}
             error={error}
             onClearError={clearError}
+            onCancel={cancelGeneration}
+            onSelectPrompt={handleSendMessage}
           />
         </div>
 
-        {/* Upload sidebar
-            Mobile  : fixed overlay, slides in from the right.
-            Desktop : static in-flow, always visible. */}
+        {/* Upload sidebar */}
         <aside
           aria-label="Document upload panel"
           className={cn(
-            "w-80 shrink-0 border-l bg-card",
-            // Mobile: slide-in from right, positioned below the app header
-            "fixed bottom-0 right-0 top-16 z-30 shadow-xl",
+            "w-72 shrink-0 border-l bg-sidebar text-sidebar-foreground",
+            "fixed bottom-0 right-0 z-30 shadow-2xl",
+            "top-[var(--header-h)]",
             "transition-transform duration-200 ease-in-out",
             sidebarOpen ? "translate-x-0" : "translate-x-full",
-            // Desktop md+: static in-flow, translate/shadow reset
             "md:static md:inset-auto md:z-auto md:translate-x-0 md:shadow-none",
           )}
         >
-          {/* Mobile-only close button — overlaid on the panel header */}
           <button
             type="button"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close upload panel"
             className={cn(
-              "absolute right-3 top-[1.1rem] z-10 rounded p-1",
+              "absolute right-3 top-3 z-10 rounded-lg p-1.5",
               "text-muted-foreground hover:bg-accent hover:text-foreground",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               "md:hidden",
@@ -75,12 +186,11 @@ export function ChatPage() {
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
-
           <DocumentUploadPanel />
         </aside>
       </div>
 
-      {/* Mobile floating upload toggle — visible only when sidebar is closed */}
+      {/* Mobile upload FAB */}
       {!sidebarOpen && (
         <button
           type="button"
@@ -90,7 +200,7 @@ export function ChatPage() {
             "fixed bottom-28 right-4 z-10",
             "flex items-center gap-2 rounded-full bg-primary px-4 py-2.5",
             "text-sm font-medium text-primary-foreground shadow-lg",
-            "hover:bg-primary/90",
+            "transition-all hover:bg-primary/90 hover:shadow-xl active:scale-95",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
             "md:hidden",
           )}

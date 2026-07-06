@@ -1,3 +1,5 @@
+from typing import NoReturn
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -14,7 +16,7 @@ router = APIRouter(tags=["Authentication"])
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def raise_unauthorized() -> None:
+def raise_unauthorized() -> NoReturn:
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Not authenticated",
@@ -72,3 +74,25 @@ def login(
 @router.get("/me", response_model=CurrentUserResponse)
 def get_current_user(user: User = Depends(get_authenticated_user)) -> User:
     return user
+
+
+def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    settings: Settings = Depends(get_settings),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """Attempt to resolve the caller identity from a Bearer token.
+
+    Returns None when no token is present or the token is invalid.
+    Never raises — callers that need a guaranteed User must check the
+    return value and raise themselves.
+    """
+    if credentials is None:
+        return None
+    payload = decode_access_token(credentials.credentials, settings)
+    if payload is None:
+        return None
+    email = payload.get("sub")
+    if not isinstance(email, str):
+        return None
+    return UserRepository(db).get_by_email(email)

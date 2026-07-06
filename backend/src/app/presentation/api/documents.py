@@ -6,8 +6,15 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.application.rag.embedding_service import EmbeddingService
+from app.domain.auth.user import User
+from app.infrastructure.bm25.bm25_service import BM25Service
 from app.infrastructure.vector_store.qdrant_service import QdrantService
-from app.presentation.api.dependencies import get_embedding_service, get_qdrant_service
+from app.presentation.api.auth import get_optional_user
+from app.presentation.api.dependencies import (
+    get_bm25_service,
+    get_embedding_service,
+    get_qdrant_service,
+)
 from app.presentation.api.schemas import DocumentUploadResponse
 
 logger = logging.getLogger(__name__)
@@ -23,7 +30,23 @@ async def upload_document(
     file: UploadFile = File(...),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
     qdrant_service: QdrantService = Depends(get_qdrant_service),
+    bm25_service: BM25Service = Depends(get_bm25_service),
+    user: User | None = Depends(get_optional_user),
 ) -> DocumentUploadResponse:
+    """Index a PDF into both the vector store and the BM25 index.
+
+    Dense (Qdrant) and sparse (BM25) indexing are performed on the same
+    chunk list so both indexes always stay in sync.
+
+    When the caller is authenticated, ``user_id`` is stored in both indexes
+    so retrieval can be scoped per user.  Unauthenticated uploads are stored
+    without a ``user_id`` and are only visible to global (unfiltered) searches
+    — preserving full backward compatibility.
+
+    BM25 indexing is non-critical: if it fails the upload still succeeds and
+    the dense index remains the authoritative retrieval path.  An error is
+    logged so the operator can investigate.
+    """
     if file.content_type != "application/pdf":
         logger.warning(
             "Rejected upload '%s': content_type=%s", file.filename, file.content_type
@@ -33,15 +56,19 @@ async def upload_document(
             detail="Only PDF files are allowed",
         )
 
-    logger.info("Upload started: '%s'", file.filename)
+    user_id = user.id if user else None
+    logger.info("Upload started: '%s' (user_id=%s)", file.filename, user_id or "anonymous")
 
-    file_path = UPLOAD_DIR / file.filename
+    # Strip any directory components from the client-supplied filename to
+    # prevent path traversal attacks (e.g. "../../etc/passwd.pdf").
+    safe_filename = Path(file.filename).name if file.filename else "upload.pdf"
+    file_path = UPLOAD_DIR / safe_filename
 
     try:
         with open(file_path, "wb") as buffer:
             buffer.write(await file.read())
     except OSError as e:
-        logger.error("Failed to save uploaded file '%s': %s", file.filename, e)
+        logger.error("Failed to save uploaded file '%s': %s", safe_filename, e)
         raise HTTPException(status_code=500, detail="Failed to save uploaded file")
 
     try:
@@ -52,12 +79,12 @@ async def upload_document(
         page_count = document.page_count
         document.close()
     except Exception as e:
-        logger.error("Failed to extract text from '%s': %s", file.filename, e)
+        logger.error("Failed to extract text from '%s': %s", safe_filename, e)
         raise HTTPException(status_code=422, detail="Failed to process PDF document")
 
     logger.info(
         "Extracted text from '%s': %d pages, %d chars",
-        file.filename,
+        safe_filename,
         page_count,
         len(text),
     )
@@ -67,20 +94,38 @@ async def upload_document(
         chunk_overlap=100,
     )
     chunks = text_splitter.split_text(text)
-    logger.info("Split '%s' into %d chunks, generating embeddings", file.filename, len(chunks))
+    logger.info("Split '%s' into %d chunks, generating embeddings", safe_filename, len(chunks))
 
-    # EmbeddingError and VectorStoreError propagate to the global exception handlers.
+    # ── Dense indexing (Qdrant) ────────────────────────────────────────────
+    # EmbeddingError and VectorStoreError propagate to the global exception
+    # handlers — a failure here aborts the upload.
     embeddings = embedding_service.embed_documents(chunks)
     qdrant_service.store_embeddings(
         embeddings=embeddings,
         chunks=chunks,
-        filename=file.filename,
+        filename=safe_filename,
+        user_id=user_id,
     )
 
-    logger.info("Document '%s' indexed successfully", file.filename)
+    # ── Sparse indexing (BM25) ─────────────────────────────────────────────
+    # Non-critical: a BM25 failure must not abort a successful dense upload.
+    # The dense index is the authoritative retrieval path in Phase 5.5A.
+    # Fusion will be introduced in Phase 5.5B once both indexes are stable.
+    try:
+        bm25_service.add_documents(
+            chunks=chunks,
+            filename=safe_filename,
+            user_id=user_id,
+        )
+    except Exception as e:
+        logger.warning(
+            "BM25 indexing failed for '%s' (non-fatal): %s", safe_filename, e
+        )
+
+    logger.info("Document '%s' indexed successfully", safe_filename)
 
     return DocumentUploadResponse(
-        filename=file.filename,
+        filename=safe_filename,
         pages=page_count,
         characters=len(text),
         chunks=len(chunks),

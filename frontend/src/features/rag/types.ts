@@ -14,6 +14,8 @@
 
 export interface ChatRequest {
   question: string
+  /** Optional — when set, the backend persists the turn to this conversation. */
+  conversation_id?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -36,3 +38,32 @@ export interface ChatResponse {
   context: string
   citations: Citation[]
 }
+
+// ---------------------------------------------------------------------------
+// Streaming SSE events — POST /rag/stream
+//
+// Mirrors the backend schemas.py CitationsEvent / TokenEvent / DoneEvent /
+// ErrorEvent discriminated union.  The "type" field is the discriminator.
+// ---------------------------------------------------------------------------
+
+export interface CitationsEvent {
+  type: "citations"
+  citations: Citation[]
+}
+
+export interface TokenEvent {
+  type: "token"
+  delta: string
+}
+
+export interface DoneEvent {
+  type: "done"
+}
+
+export interface ErrorEvent {
+  type: "error"
+  message: string
+}
+
+/** Discriminated union of all SSE event shapes emitted by /rag/stream. */
+export type StreamEvent = CitationsEvent | TokenEvent | DoneEvent | ErrorEvent

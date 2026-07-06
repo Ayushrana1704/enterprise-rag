@@ -9,39 +9,34 @@ interface ChatLayoutProps {
   messages: Message[]
   onSend: (content: string) => void
   isLoading?: boolean
-  /** Error string from useChatSession. Null/undefined = no banner rendered. */
+  isHistoryLoading?: boolean
   error?: string | null
-  /** Called when the user dismisses the error banner. */
   onClearError?: () => void
+  onCancel?: () => void
+  /** Forwarded to EmptyChatState so prompt pills are clickable. */
+  onSelectPrompt?: (prompt: string) => void
 }
 
-/**
- * Full-height chat layout.
- *
- * Uses h-[calc(100vh-4rem)] to claim exactly the viewport space below the
- * AppHeader (h-16 = 4rem) without modifying the AppShell layout.
- *
- * Structure:
- *   ┌─────────────────────┐  ↑
- *   │  ChatMessageList    │  flex-1, overflow-y-auto
- *   ├─────────────────────┤
- *   │  ErrorBanner        │  shrink-0, conditional
- *   ├─────────────────────┤
- *   │  ChatInput          │  shrink-0, pinned to bottom
- *   └─────────────────────┘  ↓ h-[calc(100vh-4rem)]
- */
 export function ChatLayout({
   messages,
   onSend,
   isLoading = false,
+  isHistoryLoading = false,
   error,
   onClearError,
+  onCancel,
+  onSelectPrompt,
 }: ChatLayoutProps) {
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col bg-background">
-      <ChatMessageList messages={messages} isLoading={isLoading} />
+    // h matches the space below the sticky header (--header-h from globals.css)
+    <div className="flex h-[calc(100vh-var(--header-h))] flex-col bg-background">
+      <ChatMessageList
+        messages={messages}
+        isLoading={isLoading}
+        isHistoryLoading={isHistoryLoading}
+        onSelectPrompt={onSelectPrompt}
+      />
 
-      {/* Error banner — sits between messages and input, only when error is present */}
       {error && (
         <div
           role="alert"
@@ -63,7 +58,11 @@ export function ChatLayout({
         </div>
       )}
 
-      <ChatInput onSend={onSend} isDisabled={isLoading} />
+      <ChatInput
+        onSend={onSend}
+        isDisabled={isLoading || isHistoryLoading}
+        onCancel={onCancel}
+      />
     </div>
   )
 }

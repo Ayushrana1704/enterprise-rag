@@ -24,3 +24,11 @@ class VectorStoreError(RAGException):
 
 class LLMError(RAGException):
     """Raised when the LLM service returns an error or is unreachable."""
+
+
+class ConversationNotFoundError(RAGException):
+    """Raised when a conversation does not exist or does not belong to the user."""
+
+
+class BM25IndexError(RAGException):
+    """Raised when the BM25 index cannot be built, searched, or persisted."""
