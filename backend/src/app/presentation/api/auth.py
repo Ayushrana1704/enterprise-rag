@@ -1,42 +1,17 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict
-
-from app.application.auth.service import AuthenticationService
-from app.domain.auth.roles import Role
-from app.domain.auth.user import User
-from app.infrastructure.config.settings import Settings, get_settings
 from sqlalchemy.orm import Session
 
+from app.application.auth.service import AuthenticationService
+from app.domain.auth.user import User
+from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.database.session import get_db
 from app.infrastructure.repositories.user_repository import UserRepository
 from app.infrastructure.security.jwt import create_access_token, decode_access_token
+from app.presentation.api.schemas import CurrentUserResponse, LoginRequest, TokenResponse
 
 router = APIRouter(tags=["Authentication"])
 bearer_scheme = HTTPBearer(auto_error=False)
-authentication_service = None
-
-
-class LoginRequest(BaseModel):
-    email: str
-    password: str
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    expires_at: datetime
-    token_type: str = "bearer"
-
-
-class CurrentUserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: str
-    email: str
-    name: str
-    role: Role
 
 
 def raise_unauthorized() -> None:
@@ -78,14 +53,10 @@ def login(
     settings: Settings = Depends(get_settings),
     db: Session = Depends(get_db),
 ) -> TokenResponse:
-
     repository = UserRepository(db)
     authentication_service = AuthenticationService(repository)
 
-    user = authentication_service.authenticate(
-        payload.email,
-        payload.password,
-    )
+    user = authentication_service.authenticate(payload.email, payload.password)
 
     if user is None:
         raise HTTPException(
@@ -95,10 +66,9 @@ def login(
 
     access_token, expires_at = create_access_token(user, settings)
 
-    return TokenResponse(
-        access_token=access_token,
-        expires_at=expires_at,
-    )
+    return TokenResponse(access_token=access_token, expires_at=expires_at)
+
+
 @router.get("/me", response_model=CurrentUserResponse)
 def get_current_user(user: User = Depends(get_authenticated_user)) -> User:
     return user

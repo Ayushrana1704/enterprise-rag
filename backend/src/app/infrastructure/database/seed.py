@@ -1,8 +1,11 @@
+import logging
 from uuid import uuid4
 
 from app.infrastructure.database.models import UserModel
 from app.infrastructure.database.session import SessionLocal
 from app.infrastructure.security.password import hash_password
+
+logger = logging.getLogger(__name__)
 
 
 def seed_admin():
@@ -31,4 +34,4 @@ def seed_admin():
     db.commit()
     db.close()
 
-    print("✅ Admin user created")
+    logger.info("Admin user created")
