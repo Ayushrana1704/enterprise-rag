@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     qdrant_port: int = Field(default=6333, alias="QDRANT_PORT")
     qdrant_collection_name: str = Field(default="documents", alias="QDRANT_COLLECTION_NAME")
 
+    # QDRANT_API_KEY
+    #   Leave empty (or omit entirely) for local Qdrant -- no auth required.
+    #   Set to the Qdrant Cloud API key for cloud deployments.
+    #   When non-empty, QdrantClient connects over HTTPS with this key.
+    #   The existing local .env does not need a QDRANT_API_KEY line;
+    #   the empty-string default preserves unchanged local behaviour.
+    qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
+
     # Embedding
     embedding_model_name: str = Field(default="BAAI/bge-m3", alias="EMBEDDING_MODEL_NAME")
 
@@ -106,19 +114,4 @@ class Settings(BaseSettings):
     # More candidates improve deduplication quality at the cost of latency.
     hybrid_oversample_factor: int = Field(default=2, alias="HYBRID_OVERSAMPLE_FACTOR")
 
-    # Per-retriever weights -- reserved for weighted RRF (Phase 5.5D+).
-    # Currently stored but not applied to the fusion formula.
-    dense_weight: float = Field(default=1.0, alias="DENSE_WEIGHT")
-    sparse_weight: float = Field(default=1.0, alias="SPARSE_WEIGHT")
-
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-        populate_by_name=True,
-    )
-
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
+    # Per-retriever weights -- reserved for weighted RRF 

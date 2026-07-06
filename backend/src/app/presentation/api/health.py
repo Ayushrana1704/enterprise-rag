@@ -57,7 +57,12 @@ def _check_qdrant(settings: Settings) -> ServiceCheck:
     t0 = time.monotonic()
     try:
         from qdrant_client import QdrantClient
-        client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        api_key = settings.qdrant_api_key.strip()
+        client = QdrantClient(
+            host=settings.qdrant_host,
+            port=settings.qdrant_port,
+            **({"api_key": api_key, "https": True} if api_key else {}),
+        )
         client.get_collections()
         latency = round((time.monotonic() - t0) * 1000, 1)
         return ServiceCheck(status="ok", latency_ms=latency)
@@ -128,9 +133,4 @@ def health_detail(
     else:
         overall = "ok"
 
-    return DetailedHealthResponse(
-        status=overall,
-        service=settings.app_name,
-        environment=settings.app_env,
-        services=checks,
-    )
+    re

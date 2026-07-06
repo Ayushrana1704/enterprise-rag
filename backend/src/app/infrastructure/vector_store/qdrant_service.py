@@ -23,9 +23,14 @@ class QdrantService:
     def __init__(self) -> None:
         settings = get_settings()
 
+        # When QDRANT_API_KEY is set, connect over HTTPS to Qdrant Cloud.
+        # When it is empty (the default), connect without auth to a local instance.
+        # No other code changes are required to switch between environments.
+        api_key = settings.qdrant_api_key.strip()
         self.client = QdrantClient(
             host=settings.qdrant_host,
             port=settings.qdrant_port,
+            **({"api_key": api_key, "https": True} if api_key else {}),
         )
 
         self.collection_name: str = settings.qdrant_collection_name
