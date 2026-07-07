@@ -91,7 +91,7 @@ export function AppHeader() {
             size="icon"
             onClick={toggleTheme}
             aria-label={resolvedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            className="relative h-8 w-8"
+            className="relative h-8 w-8 text-muted-foreground hover:text-foreground"
           >
             <span
               className={cn(
@@ -119,13 +119,14 @@ export function AppHeader() {
             </span>
           </Button>
 
+          {/* Logout button */}
           <Button
             variant="ghost"
             size="icon"
             onClick={logout}
             aria-label="Log out"
             title="Log out"
-            className="h-8 w-8"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
           >
             <LogOut className="h-4 w-4" />
           </Button>
