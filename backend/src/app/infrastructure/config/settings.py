@@ -114,4 +114,19 @@ class Settings(BaseSettings):
     # More candidates improve deduplication quality at the cost of latency.
     hybrid_oversample_factor: int = Field(default=2, alias="HYBRID_OVERSAMPLE_FACTOR")
 
-    # Per-retriever weights -- reserved for weighted RRF 
+    # Per-retriever weights -- reserved for weighted RRF (Phase 5.5D+).
+    # Currently stored but not applied to the fusion formula.
+    dense_weight: float = Field(default=1.0, alias="DENSE_WEIGHT")
+    sparse_weight: float = Field(default=1.0, alias="SPARSE_WEIGHT")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

@@ -133,4 +133,9 @@ def health_detail(
     else:
         overall = "ok"
 
-    re
+    return DetailedHealthResponse(
+        status=overall,
+        service=settings.app_name,
+        environment=settings.app_env,
+        services=checks,
+    )
