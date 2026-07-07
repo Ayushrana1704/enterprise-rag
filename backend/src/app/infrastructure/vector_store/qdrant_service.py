@@ -7,6 +7,7 @@ from qdrant_client.http.models import (
     FieldCondition,
     Filter,
     MatchValue,
+    PayloadSchemaType,
     PointStruct,
     ScoredPoint,
     VectorParams,
@@ -37,29 +38,64 @@ class QdrantService:
         self.vector_size: int = get_vector_dimension(settings.embedding_model_name)
 
     def create_collection(self) -> None:
+        """Ensure the collection and all required payload indexes exist.
+
+        Safe to call on every startup -- all operations are idempotent:
+          - create_collection is skipped if the collection already exists.
+          - create_payload_index is a no-op if the index already exists.
+
+        Qdrant Cloud (unlike local Qdrant) requires an explicit payload index
+        for every field used in a filter.  Without the user_id index, filtered
+        searches raise:
+          "Index required but not found for 'user_id'"
+        """
         try:
             collections = self.client.get_collections().collections
             names = [c.name for c in collections]
 
-            if self.collection_name in names:
+            if self.collection_name not in names:
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=self.vector_size,
+                        distance=Distance.COSINE,
+                    ),
+                )
+                logger.info(
+                    "Qdrant collection '%s' created (dim=%d, metric=cosine)",
+                    self.collection_name,
+                    self.vector_size,
+                )
+            else:
                 logger.info("Qdrant collection '%s' already exists", self.collection_name)
-                return
 
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=self.vector_size,
-                    distance=Distance.COSINE,
-                ),
-            )
-            logger.info(
-                "Qdrant collection '%s' created (dim=%d, metric=cosine)",
-                self.collection_name,
-                self.vector_size,
-            )
         except Exception as e:
             logger.error("Failed to create Qdrant collection '%s': %s", self.collection_name, e)
             raise VectorStoreError(f"Failed to initialize collection '{self.collection_name}'") from e
+
+        # Always ensure the payload index exists, even for pre-existing collections.
+        # PayloadSchemaType.KEYWORD covers UUID strings stored as plain strings.
+        # This call is idempotent: Qdrant returns the existing index info unchanged
+        # if an index with the same field name and type already exists.
+        try:
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="user_id",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+            logger.info(
+                "Payload index on 'user_id' (keyword) ensured for collection '%s'",
+                self.collection_name,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to create payload index on 'user_id' for collection '%s': %s",
+                self.collection_name,
+                e,
+            )
+            raise VectorStoreError(
+                f"Failed to create payload index on 'user_id' for '{self.collection_name}'"
+            ) from e
 
     def store_embeddings(
         self,
@@ -88,7 +124,7 @@ class QdrantService:
                 payload={
                     "filename": filename,
                     "text": chunk,
-                    # 1-based position within this file — used for citation display.
+                    # 1-based position within this file -- used for citation display.
                     "chunk_index": chunk_idx,
                     **({"user_id": user_id} if user_id is not None else {}),
                 },
@@ -119,7 +155,7 @@ class QdrantService:
 
         When ``user_id`` is provided, applies a native Qdrant payload filter
         so only points owned by that user are considered.  This runs inside
-        Qdrant's ANN index — no post-retrieval filtering, no over-fetching.
+        Qdrant's ANN index -- no post-retrieval filtering, no over-fetching.
 
         When ``user_id`` is None (anonymous request), the search is global and
         returns results from the full collection, preserving backward compat.
