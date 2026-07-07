@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import fitz
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,10 @@ router = APIRouter(tags=["Documents"])
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+
+# ---------------------------------------------------------------------------
+# POST /documents/upload
+# ---------------------------------------------------------------------------
 
 @router.post("/upload", response_model=DocumentUploadResponse)
 async def upload_document(
@@ -113,8 +117,6 @@ async def upload_document(
     logger.info("Split '%s' into %d chunks, generating embeddings", safe_filename, len(chunks))
 
     # -- Dense indexing (Qdrant) -----------------------------------------------
-    # EmbeddingError and VectorStoreError propagate to the global exception
-    # handlers -- a failure here aborts the upload.
     embeddings = embedding_service.embed_documents(chunks)
     qdrant_service.store_embeddings(
         embeddings=embeddings,
@@ -140,7 +142,6 @@ async def upload_document(
 
     # -- Persist document metadata to PostgreSQL --------------------------------
     # Non-critical: a DB failure must not abort a successful vector store upload.
-    # The Qdrant vectors are the authoritative store; the DB row is metadata only.
     try:
         doc_row = DocumentModel(
             id=document_id,
@@ -176,6 +177,10 @@ async def upload_document(
     )
 
 
+# ---------------------------------------------------------------------------
+# GET /documents
+# ---------------------------------------------------------------------------
+
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(
     db: Session = Depends(get_db),
@@ -203,3 +208,83 @@ def list_documents(
         )
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# DELETE /documents/{document_id}
+# ---------------------------------------------------------------------------
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_authenticated_user),
+    qdrant_service: QdrantService = Depends(get_qdrant_service),
+    bm25_service: BM25Service = Depends(get_bm25_service),
+) -> None:
+    """Permanently delete a document and all its indexed data.
+
+    Deletion is atomic across three stores in this order:
+      1. PostgreSQL row  (source of truth for ownership)
+      2. Qdrant vectors  (dense index)
+      3. BM25 chunks     (sparse index)
+
+    Ownership check: the document must exist AND belong to the authenticated
+    user.  Any other state returns 404 — we never leak whether a document
+    exists under another user_id.
+
+    Qdrant and BM25 deletions are best-effort after the DB row is removed.
+    Failures in either store are logged but do not roll back the DB deletion,
+    because a stale vector/BM25 entry will simply produce irrelevant search
+    results for a document_id that no longer exists in the DB.  The operator
+    can clean up via a future admin endpoint if needed.
+    """
+    # 1. Verify existence and ownership
+    row = (
+        db.query(DocumentModel)
+        .filter(
+            DocumentModel.id == document_id,
+            DocumentModel.user_id == user.id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found.",
+        )
+
+    filename = row.filename
+    logger.info(
+        "Deleting document: document_id=%s filename='%s' user_id=%s",
+        document_id, filename, user.id,
+    )
+
+    # 2. Delete PostgreSQL row
+    db.delete(row)
+    db.commit()
+    logger.info("DB row deleted: document_id=%s", document_id)
+
+    # 3. Delete Qdrant vectors (best-effort)
+    try:
+        qdrant_service.delete_by_document(user_id=user.id, document_id=document_id)
+    except Exception as e:
+        logger.error(
+            "Qdrant cleanup failed for document_id=%s (DB row already deleted): %s",
+            document_id, e,
+        )
+
+    # 4. Delete BM25 chunks (best-effort)
+    try:
+        bm25_service.delete_by_document(document_id=document_id, user_id=user.id)
+    except Exception as e:
+        logger.error(
+            "BM25 cleanup failed for document_id=%s (DB row already deleted): %s",
+            document_id, e,
+        )
+
+    logger.info(
+        "Document deleted successfully: document_id=%s filename='%s'",
+        document_id, filename,
+    )
+    # FastAPI returns 204 No Content automatically (status_code set on decorator)

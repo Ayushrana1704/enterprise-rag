@@ -74,6 +74,7 @@ export function ChatPage() {
     selectedDocumentId,
     setSelectedDocumentId,
     refresh: refreshDocuments,
+    deleteDocument,
   } = useDocuments()
 
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -201,6 +202,7 @@ export function ChatPage() {
             selectedDocumentId={selectedDocumentId}
             onSelectDocument={setSelectedDocumentId}
             onRefresh={refreshDocuments}
+            onDeleteDocument={deleteDocument}
           />
         </aside>
       </div>

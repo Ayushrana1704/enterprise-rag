@@ -6,6 +6,7 @@ from qdrant_client.http.models import (
     Distance,
     FieldCondition,
     Filter,
+    FilterSelector,
     MatchValue,
     PayloadSchemaType,
     PointStruct,
@@ -75,7 +76,7 @@ class QdrantService:
 
         # Ensure payload indexes for every field used in a filter.
         # Qdrant Cloud requires explicit indexes; local Qdrant does not.
-        # Both calls are idempotent — safe to call on every startup.
+        # Both calls are idempotent -- safe to call on every startup.
         for field in ("user_id", "document_id"):
             try:
                 self.client.create_payload_index(
@@ -160,11 +161,11 @@ class QdrantService:
         """Search the collection for nearest neighbours.
 
         Filter logic:
-          user_id=None, document_id=None  → global search (backward compat)
-          user_id="x",  document_id=None  → filter by user only
-          user_id="x",  document_id="y"   → filter by user AND document
+          user_id=None, document_id=None  -> global search (backward compat)
+          user_id="x",  document_id=None  -> filter by user only
+          user_id="x",  document_id="y"   -> filter by user AND document
 
-        All filter conditions run inside Qdrant's ANN index — no over-fetching.
+        All filter conditions run inside Qdrant's ANN index -- no over-fetching.
         """
         query_filter: Filter | None = None
         must = []
@@ -196,3 +197,36 @@ class QdrantService:
 
         logger.info("Search returned %d results", len(results.points))
         return results.points
+
+    def delete_by_document(self, user_id: str, document_id: str) -> None:
+        """Delete all points that belong to both ``user_id`` and ``document_id``.
+
+        The double-keyed filter guarantees that only chunks from the requesting
+        user's document are removed -- no cross-user data is ever touched.
+
+        Safe to call even if the document has no vectors (e.g. it was already
+        cleaned up): Qdrant treats a filter with zero matches as a no-op.
+        """
+        delete_filter = Filter(
+            must=[
+                FieldCondition(key="user_id", match=MatchValue(value=user_id)),
+                FieldCondition(key="document_id", match=MatchValue(value=document_id)),
+            ]
+        )
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=FilterSelector(filter=delete_filter),
+            )
+            logger.info(
+                "Deleted Qdrant points for document_id=%s user_id=%s",
+                document_id, user_id,
+            )
+        except Exception as e:
+            logger.error(
+                "Failed to delete Qdrant points for document_id=%s: %s",
+                document_id, e,
+            )
+            raise VectorStoreError(
+                f"Failed to delete vectors for document '{document_id}'"
+            ) from e
