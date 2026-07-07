@@ -102,19 +102,24 @@ class QdrantService:
         embeddings: list[list[float]],
         chunks: list[str],
         filename: str,
+        document_id: str,
         user_id: str | None = None,
     ) -> None:
         """Upsert chunk embeddings into the collection.
 
-        Each point payload includes ``filename`` and ``text``.
+        Each point payload includes ``filename``, ``document_id``, and ``text``.
+        ``document_id`` is a UUID generated at upload time that uniquely
+        identifies this document.  It is stored on every chunk so vectors can
+        later be filtered or grouped by document (Phase 2+).
+
         When ``user_id`` is provided (authenticated upload), it is stored in
         the payload so retrieval can be scoped to that user later.
         Anonymous uploads (``user_id=None``) omit the field entirely, which
         means they will only surface in unfiltered (anonymous) searches.
         """
         logger.info(
-            "Storing %d embeddings for '%s' (user_id=%s)",
-            len(chunks), filename, user_id or "anonymous",
+            "Storing %d embeddings for '%s' (document_id=%s, user_id=%s)",
+            len(chunks), filename, document_id, user_id or "anonymous",
         )
 
         points = [
@@ -123,6 +128,7 @@ class QdrantService:
                 vector=embedding,
                 payload={
                     "filename": filename,
+                    "document_id": document_id,
                     "text": chunk,
                     # 1-based position within this file -- used for citation display.
                     "chunk_index": chunk_idx,
