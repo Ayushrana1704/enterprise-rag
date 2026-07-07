@@ -5,7 +5,8 @@ import { ConversationSidebar } from "@/features/conversations/components/Convers
 import { getConversation } from "@/features/conversations/conversations-api"
 import { useConversations } from "@/features/conversations/hooks/useConversations"
 import type { ConversationMessage } from "@/features/conversations/types"
-import { DocumentUploadPanel } from "@/features/documents/components/DocumentUploadPanel"
+import { KnowledgeBasePanel } from "@/features/documents/components/KnowledgeBasePanel"
+import { useDocuments } from "@/features/documents/hooks/useDocuments"
 import { cn } from "@/lib/utils"
 import { useApiClient } from "@/shared/api-client"
 import { useToast } from "@/shared/toast/ToastProvider"
@@ -67,6 +68,14 @@ export function ChatPage() {
     touchConversation,
   } = useConversations()
 
+  const {
+    documents,
+    isLoading: docsLoading,
+    selectedDocumentId,
+    setSelectedDocumentId,
+    refresh: refreshDocuments,
+  } = useDocuments()
+
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isHistoryLoading, setIsHistoryLoading] = useState(false)
 
@@ -99,9 +108,9 @@ export function ChatPage() {
       if (created === null) return
       convId = created.id
     }
-    const completed = await sendMessage(content, convId)
+    const completed = await sendMessage(content, convId, selectedDocumentId)
     if (completed) touchConversation(convId)
-  }, [selectedConversationId, createConversation, sendMessage, touchConversation])
+  }, [selectedConversationId, selectedDocumentId, createConversation, sendMessage, touchConversation])
 
   const handleDeleteConversation = useCallback(async (id: string) => {
     const wasActive = id === selectedConversationId
@@ -186,7 +195,13 @@ export function ChatPage() {
           >
             <X className="h-4 w-4" aria-hidden="true" />
           </button>
-          <DocumentUploadPanel />
+          <KnowledgeBasePanel
+            documents={documents}
+            isDocumentsLoading={docsLoading}
+            selectedDocumentId={selectedDocumentId}
+            onSelectDocument={setSelectedDocumentId}
+            onRefresh={refreshDocuments}
+          />
         </aside>
       </div>
 

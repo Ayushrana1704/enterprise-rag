@@ -105,6 +105,17 @@ class DocumentUploadResponse(BaseModel):
     first_chunk: str
 
 
+class DocumentResponse(BaseModel):
+    """One row in the user's document list. Source of truth is the DB."""
+    model_config = ConfigDict(from_attributes=True)
+
+    document_id: str
+    filename: str
+    page_count: int
+    chunk_count: int
+    created_at: datetime
+
+
 # ---------------------------------------------------------------------------
 # RAG
 # ---------------------------------------------------------------------------

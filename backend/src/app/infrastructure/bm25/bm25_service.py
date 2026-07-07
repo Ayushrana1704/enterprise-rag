@@ -36,6 +36,7 @@ class BM25Document:
     text: str
     filename: str
     user_id: str | None
+    document_id: str | None = None  # Phase 4; None for pre-Phase-4 corpus entries
 
 
 # ---------------------------------------------------------------------------
@@ -122,11 +123,13 @@ class BM25Service:
         chunks: list[str],
         filename: str,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> None:
         """Append ``chunks`` to the index and persist the updated corpus.
 
         Called once per upload.  Each chunk becomes an independent BM25
         document, exactly mirroring the per-chunk embedding stored in Qdrant.
+        ``document_id`` enables per-document scoping in Phase 4+.
         """
         if not chunks:
             return
@@ -134,14 +137,14 @@ class BM25Service:
         with self._lock:
             for chunk in chunks:
                 self._corpus.append(
-                    BM25Document(text=chunk, filename=filename, user_id=user_id)
+                    BM25Document(text=chunk, filename=filename, user_id=user_id, document_id=document_id)
                 )
             self._rebuild_index()
             self._persist()
 
         logger.info(
-            "BM25: indexed %d chunks from '%s' (user_id=%s, corpus total=%d)",
-            len(chunks), filename, user_id or "anonymous", len(self._corpus),
+            "BM25: indexed %d chunks from '%s' (user_id=%s, document_id=%s, corpus total=%d)",
+            len(chunks), filename, user_id or "anonymous", document_id or "none", len(self._corpus),
         )
 
     def stats(self) -> tuple[int, int]:
@@ -160,20 +163,21 @@ class BM25Service:
         query: str,
         limit: int = 5,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> list[BM25Result]:
         """Return the top-``limit`` chunks ranked by BM25Okapi score.
 
-        When ``user_id`` is provided the search is scoped to that user's
-        documents.  A temporary sub-corpus index is built for the query so
-        IDF statistics reflect only the relevant document set — the same
-        semantic guarantee as Qdrant's pre-filter.
+        Filter logic mirrors QdrantService.search():
+          user_id=None, document_id=None → global index (backward compat)
+          user_id="x",  document_id=None → filter by user only
+          user_id="x",  document_id="y"  → filter by user AND document
 
-        When ``user_id`` is None (anonymous) the global index is used,
-        preserving the pre-isolation behaviour.
+        When filtering, a temporary sub-corpus index is built so IDF statistics
+        reflect only the relevant document set.
         """
         with self._lock:
-            if user_id is not None:
-                return self._search_filtered(query, limit, user_id)
+            if user_id is not None or document_id is not None:
+                return self._search_filtered(query, limit, user_id, document_id)
             return self._search_global(query, limit)
 
     # ------------------------------------------------------------------
@@ -193,10 +197,15 @@ class BM25Service:
         self,
         query: str,
         limit: int,
-        user_id: str,
+        user_id: str | None,
+        document_id: str | None = None,
     ) -> list[BM25Result]:
-        """Build a temporary sub-corpus index scoped to ``user_id`` and search it."""
-        filtered = [d for d in self._corpus if d.user_id == user_id]
+        """Build a temporary sub-corpus index scoped to the given filters and search it."""
+        filtered = self._corpus
+        if user_id is not None:
+            filtered = [d for d in filtered if d.user_id == user_id]
+        if document_id is not None:
+            filtered = [d for d in filtered if d.document_id == document_id]
         if not filtered:
             return []
 

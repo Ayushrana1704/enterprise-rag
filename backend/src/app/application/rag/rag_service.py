@@ -19,11 +19,12 @@ class RAGService:
         self,
         question: str,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> dict:
         logger.info("RAG pipeline started: question_length=%d", len(question))
 
         context, sources = self.retrieval_service.retrieve_with_context(
-            question, user_id=user_id
+            question, user_id=user_id, document_id=document_id
         )
 
         answer = self.llm_service.generate(
@@ -47,6 +48,7 @@ class RAGService:
         self,
         question: str,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Stream the RAG pipeline response as SSE-ready event dicts.
 
@@ -72,6 +74,7 @@ class RAGService:
             self.retrieval_service.retrieve_with_context,
             question,
             user_id=user_id,
+            document_id=document_id,
         )
         context, sources = await loop.run_in_executor(None, fn)
 

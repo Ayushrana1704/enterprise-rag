@@ -13,13 +13,13 @@ from app.infrastructure.bm25.bm25_service import BM25Service
 from app.infrastructure.database.session import get_db
 from app.infrastructure.models.document import DocumentModel
 from app.infrastructure.vector_store.qdrant_service import QdrantService
-from app.presentation.api.auth import get_optional_user
+from app.presentation.api.auth import get_authenticated_user, get_optional_user
 from app.presentation.api.dependencies import (
     get_bm25_service,
     get_embedding_service,
     get_qdrant_service,
 )
-from app.presentation.api.schemas import DocumentUploadResponse
+from app.presentation.api.schemas import DocumentResponse, DocumentUploadResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +44,13 @@ async def upload_document(
     chunk list so both indexes always stay in sync.
 
     A UUID document_id is generated for every upload and stored in:
-      - Every Qdrant point payload (enables per-document filtering in Phase 2+)
+      - Every Qdrant point payload (enables per-document filtering in Phase 4+)
+      - Every BM25 corpus entry (enables per-document filtering in Phase 4+)
       - The documents table in PostgreSQL (persistent document registry)
 
-    When the caller is authenticated, ``user_id`` is stored in both indexes
+    When the caller is authenticated, user_id is stored in both indexes
     so retrieval can be scoped per user.  Unauthenticated uploads are stored
-    without a ``user_id`` and are only visible to global (unfiltered) searches
+    without a user_id and are only visible to global (unfiltered) searches
     -- preserving full backward compatibility.
 
     BM25 indexing is non-critical: if it fails the upload still succeeds and
@@ -130,6 +131,7 @@ async def upload_document(
             chunks=chunks,
             filename=safe_filename,
             user_id=user_id,
+            document_id=document_id,
         )
     except Exception as e:
         logger.warning(
@@ -172,3 +174,32 @@ async def upload_document(
         chunks=len(chunks),
         first_chunk=chunks[0],
     )
+
+
+@router.get("", response_model=list[DocumentResponse])
+def list_documents(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_authenticated_user),
+) -> list[DocumentResponse]:
+    """Return all documents belonging to the authenticated user, newest first.
+
+    Source of truth is the documents table (PostgreSQL).
+    Qdrant is not queried.
+    """
+    rows = (
+        db.query(DocumentModel)
+        .filter(DocumentModel.user_id == user.id)
+        .order_by(DocumentModel.created_at.desc())
+        .all()
+    )
+    logger.info("Listed %d documents for user_id=%s", len(rows), user.id)
+    return [
+        DocumentResponse(
+            document_id=row.id,
+            filename=row.filename,
+            page_count=row.page_count,
+            chunk_count=row.chunk_count,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]

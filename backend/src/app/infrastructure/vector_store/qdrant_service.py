@@ -73,29 +73,28 @@ class QdrantService:
             logger.error("Failed to create Qdrant collection '%s': %s", self.collection_name, e)
             raise VectorStoreError(f"Failed to initialize collection '{self.collection_name}'") from e
 
-        # Always ensure the payload index exists, even for pre-existing collections.
-        # PayloadSchemaType.KEYWORD covers UUID strings stored as plain strings.
-        # This call is idempotent: Qdrant returns the existing index info unchanged
-        # if an index with the same field name and type already exists.
-        try:
-            self.client.create_payload_index(
-                collection_name=self.collection_name,
-                field_name="user_id",
-                field_schema=PayloadSchemaType.KEYWORD,
-            )
-            logger.info(
-                "Payload index on 'user_id' (keyword) ensured for collection '%s'",
-                self.collection_name,
-            )
-        except Exception as e:
-            logger.error(
-                "Failed to create payload index on 'user_id' for collection '%s': %s",
-                self.collection_name,
-                e,
-            )
-            raise VectorStoreError(
-                f"Failed to create payload index on 'user_id' for '{self.collection_name}'"
-            ) from e
+        # Ensure payload indexes for every field used in a filter.
+        # Qdrant Cloud requires explicit indexes; local Qdrant does not.
+        # Both calls are idempotent — safe to call on every startup.
+        for field in ("user_id", "document_id"):
+            try:
+                self.client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name=field,
+                    field_schema=PayloadSchemaType.KEYWORD,
+                )
+                logger.info(
+                    "Payload index on '%s' (keyword) ensured for collection '%s'",
+                    field, self.collection_name,
+                )
+            except Exception as e:
+                logger.error(
+                    "Failed to create payload index on '%s' for collection '%s': %s",
+                    field, self.collection_name, e,
+                )
+                raise VectorStoreError(
+                    f"Failed to create payload index on '{field}' for '{self.collection_name}'"
+                ) from e
 
     def store_embeddings(
         self,
@@ -156,28 +155,29 @@ class QdrantService:
         query_embedding: list[float],
         limit: int = 5,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> list[ScoredPoint]:
         """Search the collection for nearest neighbours.
 
-        When ``user_id`` is provided, applies a native Qdrant payload filter
-        so only points owned by that user are considered.  This runs inside
-        Qdrant's ANN index -- no post-retrieval filtering, no over-fetching.
+        Filter logic:
+          user_id=None, document_id=None  → global search (backward compat)
+          user_id="x",  document_id=None  → filter by user only
+          user_id="x",  document_id="y"   → filter by user AND document
 
-        When ``user_id`` is None (anonymous request), the search is global and
-        returns results from the full collection, preserving backward compat.
+        All filter conditions run inside Qdrant's ANN index — no over-fetching.
         """
         query_filter: Filter | None = None
+        must = []
         if user_id is not None:
-            query_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="user_id",
-                        match=MatchValue(value=user_id),
-                    )
-                ]
-            )
+            must.append(FieldCondition(key="user_id", match=MatchValue(value=user_id)))
+        if document_id is not None:
+            must.append(FieldCondition(key="document_id", match=MatchValue(value=document_id)))
+        if must:
+            query_filter = Filter(must=must)
 
         log_scope = f"user_id={user_id}" if user_id else "anonymous"
+        if document_id:
+            log_scope += f" doc={document_id}"
         logger.info(
             "Searching collection '%s' (limit=%d, scope=%s)",
             self.collection_name, limit, log_scope,

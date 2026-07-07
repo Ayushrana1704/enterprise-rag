@@ -12,18 +12,11 @@
  *   const api = useApiClient()
  *   const result = await uploadDocument(api, file)
  *
- * ─────────────────────────────────────────────────────────────────────────────
- * ABSENT BACKEND ENDPOINTS
- * The following operations were requested but do not exist in the backend:
- *   - listDocuments  → no GET /documents/ route
- *   - deleteDocument → no DELETE /documents/:id route
- * These will be implemented here once the corresponding backend routes exist.
- * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import type { ApiClient } from "@/shared/api-client"
 
-import type { DocumentUploadResponse } from "./types"
+import type { DocumentItem, DocumentUploadResponse } from "./types"
 
 /**
  * Upload a PDF file for processing and indexing.
@@ -40,4 +33,12 @@ export async function uploadDocument(
   const formData = new FormData()
   formData.append("file", file)
   return client.postForm<DocumentUploadResponse>("/documents/upload", formData)
+}
+
+/**
+ * Fetch all documents owned by the authenticated user, newest first.
+ * Maps to: GET /documents
+ */
+export async function listDocuments(client: ApiClient): Promise<DocumentItem[]> {
+  return client.get<DocumentItem[]>("/documents")
 }

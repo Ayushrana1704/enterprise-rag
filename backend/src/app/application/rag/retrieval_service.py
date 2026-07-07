@@ -184,6 +184,7 @@ class RetrievalService:
         query: str,
         limit: int = 3,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> list[RetrievalResult]:
         """Run retrieval and return a ranked list of results.
 
@@ -199,12 +200,13 @@ class RetrievalService:
                 query_embedding=query_embedding,
                 limit=limit,
                 user_id=user_id,
+                document_id=document_id,
             )
             fused = _wrap_dense(dense_results, limit)
             logger.info(
-                "Retrieval (dense-only): query_len=%d user=%s "
+                "Retrieval (dense-only): query_len=%d user=%s doc=%s "
                 "dense=%d final=%d",
-                len(query), user_id or "anon",
+                len(query), user_id or "anon", document_id or "all",
                 len(dense_results), len(fused),
             )
             return fused
@@ -216,11 +218,13 @@ class RetrievalService:
             query_embedding=query_embedding,
             limit=fetch,
             user_id=user_id,
+            document_id=document_id,
         )
         sparse_results: list[BM25Result] = self.bm25.search(
             query=query,
             limit=fetch,
             user_id=user_id,
+            document_id=document_id,
         )
 
         # Overlap stats (cheap set ops; used only for logging)
@@ -237,9 +241,9 @@ class RetrievalService:
         )
 
         logger.info(
-            "Retrieval (hybrid): query_len=%d user=%s "
+            "Retrieval (hybrid): query_len=%d user=%s doc=%s "
             "dense=%d sparse=%d merged=%d duplicates=%d final=%d",
-            len(query), user_id or "anon",
+            len(query), user_id or "anon", document_id or "all",
             len(dense_results), len(sparse_results),
             merged_count, duplicate_count, len(fused),
         )
@@ -250,9 +254,10 @@ class RetrievalService:
         query: str,
         limit: int = 3,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> tuple[str, list[RetrievalResult]]:
         """Return (context_string, raw_results) for callers that need source metadata."""
-        results = self.retrieve(query, limit=limit, user_id=user_id)
+        results = self.retrieve(query, limit=limit, user_id=user_id, document_id=document_id)
         context = "\n\n".join(r.payload["text"] for r in results)
         return context, results
 
@@ -260,6 +265,7 @@ class RetrievalService:
         self,
         query: str,
         user_id: str | None = None,
+        document_id: str | None = None,
     ) -> str:
-        context, _ = self.retrieve_with_context(query, user_id=user_id)
+        context, _ = self.retrieve_with_context(query, user_id=user_id, document_id=document_id)
         return context

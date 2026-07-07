@@ -30,6 +30,10 @@ router = APIRouter(tags=["RAG"])
 class ChatRequest(BaseModel):
     question: str
     conversation_id: str | None = None
+    # When set, retrieval is scoped to this document only.
+    # None (or absent) = search across all documents owned by the user.
+    # Old clients that omit this field continue to work unchanged.
+    document_id: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -68,7 +72,7 @@ def chat(
     rag_service: RAGService = Depends(get_rag_service),
     user: User | None = Depends(get_optional_user),
 ) -> ChatResponse:
-    result = rag_service.ask(request.question, user_id=user.id if user else None)
+    result = rag_service.ask(request.question, user_id=user.id if user else None, document_id=request.document_id)
     return ChatResponse(
         answer=result["answer"],
         context=result["context"],
@@ -128,7 +132,7 @@ async def stream_chat(
         completed = False
 
         try:
-            async for event in rag_service.ask_stream(request.question, user_id=user_id):
+            async for event in rag_service.ask_stream(request.question, user_id=user_id, document_id=request.document_id):
                 yield f"data: {json.dumps(event)}\n\n"
 
                 if event["type"] == "citations":

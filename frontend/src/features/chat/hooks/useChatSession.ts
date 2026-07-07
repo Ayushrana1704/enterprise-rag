@@ -17,8 +17,9 @@ export interface ChatSessionState {
    * Send a message and stream the response.
    * Returns true on clean completion (done event received), false otherwise.
    * conversationId is forwarded to /rag/stream for persistence; omit for stateless mode.
+   * documentId scopes retrieval to a single document; null or omitted = All Documents.
    */
-  sendMessage: (content: string, conversationId?: string | null) => Promise<boolean>
+  sendMessage: (content: string, conversationId?: string | null, documentId?: string | null) => Promise<boolean>
   clearError: () => void
   cancelGeneration: () => void
   loadMessages: (messages: Message[]) => void
@@ -51,7 +52,7 @@ export function useChatSession(): ChatSessionState {
   const abortControllerRef = useRef<AbortController | null>(null)
 
   const sendMessage = useCallback(
-    async (content: string, conversationId?: string | null): Promise<boolean> => {
+    async (content: string, conversationId?: string | null, documentId?: string | null): Promise<boolean> => {
       const trimmed = content.trim()
       if (!trimmed || isLoading) return false
 
@@ -83,6 +84,7 @@ export function useChatSession(): ChatSessionState {
           {
             question: trimmed,
             ...(conversationId != null ? { conversation_id: conversationId } : {}),
+            ...(documentId != null ? { document_id: documentId } : {}),
           },
           controller.signal,
         )) {

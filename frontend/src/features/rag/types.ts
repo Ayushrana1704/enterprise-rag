@@ -16,6 +16,8 @@ export interface ChatRequest {
   question: string
   /** Optional — when set, the backend persists the turn to this conversation. */
   conversation_id?: string | null
+  /** Optional — when set, retrieval is scoped to this document only. null = All Documents. */
+  document_id?: string | null
 }
 
 // ---------------------------------------------------------------------------
