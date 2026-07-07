@@ -1,193 +1,267 @@
+<div align="center">
 
-# 🚀 Enterprise AI Knowledge Platform
+![Enterprise AI Knowledge Platform](docs/assets/banner.png)
 
-> A production-ready Retrieval-Augmented Generation (RAG) platform that enables users to build secure AI-powered knowledge bases from PDF documents using Hybrid Retrieval (Dense + BM25), FastAPI, React, PostgreSQL, Qdrant Cloud, and Groq.
+# Enterprise AI Knowledge Platform
 
-<p align="center">
+**Production-grade Retrieval-Augmented Generation for organizational knowledge management.**
+Upload documents, ask questions in natural language, and get cited, verifiable answers — powered by hybrid dense + sparse retrieval and a real-time streaming LLM pipeline.
 
-![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)
-![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-4169E1?style=for-the-badge&logo=postgresql)
-![Qdrant](https://img.shields.io/badge/Qdrant-Vector_DB-DC244C?style=for-the-badge)
-![Groq](https://img.shields.io/badge/Groq-Llama_3.1_8B-black?style=for-the-badge)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)
-![MIT License](https://img.shields.io/badge/License-MIT-success?style=for-the-badge)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-enterprise--rag--kappa.vercel.app-blue?style=for-the-badge&logo=vercel)](https://enterprise-rag-kappa.vercel.app)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.139-009688?style=for-the-badge&logo=fastapi)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react)](https://react.dev)
+[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python)](https://python.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?style=for-the-badge&logo=typescript)](https://typescriptlang.org)
+[![Qdrant](https://img.shields.io/badge/Qdrant-Cloud-DC143C?style=for-the-badge)](https://qdrant.tech)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](LICENSE)
 
-</p>
+[Live Demo](https://enterprise-rag-kappa.vercel.app) · [API Docs](https://enterprise-rag-3x98.onrender.com/docs) · [Setup Guide](docs/SETUP.md) · [Deployment](docs/DEPLOYMENT.md) · [API Reference](docs/API.md)
 
----
-
-## 🌐 Live Demo
-
-- **Application:** https://enterprise-rag-kappa.vercel.app
-- **Repository:** https://github.com/Ayushrana1704/enterprise-rag
+</div>
 
 ---
 
-## 📖 Overview
+## Screenshots
 
-Enterprise AI Knowledge Platform is a production-ready multi-user Retrieval-Augmented Generation (RAG) application.
+### Dashboard
+![Dashboard](docs/images/Dashboard.png)
 
-Unlike traditional "Chat with PDF" projects, every uploaded document becomes an individual knowledge base. Users can search a single document or retrieve information across their complete document library using Hybrid Retrieval.
+### Chat with Streaming Responses & Citations
+![Chat](docs/images/Chat.png)
 
-The platform combines:
+![Citations](docs/images/Citations.png)
 
-- Dense Vector Search
-- BM25 Sparse Search
-- Groq LLM
-- Streaming Responses
-- JWT Authentication
-- PostgreSQL Metadata
-- Qdrant Cloud Vector Database
+### Knowledge Base & Document Management
+![Knowledge Base](docs/images/Knowledge_Base.png)
 
----
-
-# ✨ Features
-
-## Authentication
-
-- JWT Login
-- Registration
-- Protected Routes
-- User Isolation
-
-## Knowledge Base
-
-- PDF Upload
-- Automatic Chunking
-- Embedding Generation
-- Document Metadata
-- Delete Documents
-- Multi-document Support
-
-## Retrieval
-
-- Hybrid Retrieval
-- Dense Embeddings
-- BM25
-- Document Scoped Search
-- Source Citations
-
-## AI Chat
-
-- Streaming Responses
-- Conversation History
-- Groq LLM Integration
-
-## Cloud
-
-- Render
-- Vercel
-- Supabase
-- Qdrant Cloud
+![Upload](docs/images/Upload.png)
 
 ---
 
-# 🛠 Tech Stack
+## Architecture
 
-| Layer | Technology |
-|-------|------------|
-| Frontend | React, TypeScript, Vite, Tailwind CSS |
-| Backend | FastAPI, SQLAlchemy, Pydantic |
-| Database | PostgreSQL (Supabase) |
+### System Overview
+![System Architecture](docs/diagrams/Overall_System_Architecture.png)
+
+### Hybrid Retrieval Pipeline
+![Hybrid Retrieval Pipeline](docs/diagrams/Hybrid_Retrieval_Pipeline.png)
+
+### PDF Ingestion Pipeline
+![PDF Upload Pipeline](docs/diagrams/PDF_Upload_Pipeline.png)
+
+### Cloud Deployment
+![Cloud Deployment Architecture](docs/diagrams/Cloud_Deployment_Architecture.png)
+
+---
+
+## How Hybrid Retrieval Works
+
+Most RAG systems rely on vector search alone. This platform fuses two complementary strategies using **Reciprocal Rank Fusion (RRF)**:
+
+```
+Query
+ ├── Dense Search  (Qdrant · sentence-transformers)  →  ranked list A
+ └── Sparse Search (BM25Okapi · in-memory index)     →  ranked list B
+                                      ↓
+                        RRF:  score = Σ 1 / (k + rank)
+                                      ↓
+                         Top-N chunks → LLM → streamed answer + citations
+```
+
+| Retrieval type | Semantic similarity | Exact keywords | Rare terms |
+|----------------|:-------------------:|:--------------:|:----------:|
+| Dense only     | ✅ | ❌ | ❌ |
+| BM25 only      | ❌ | ✅ | ✅ |
+| **Hybrid**     | ✅ | ✅ | ✅ |
+
+Hybrid search can be toggled via `HYBRID_SEARCH_ENABLED` without redeployment.
+
+---
+
+## Features
+
+**Core RAG**
+- Hybrid retrieval — Qdrant dense + BM25 sparse fused via RRF (k=60)
+- Real-time token streaming via Server-Sent Events
+- Source citations on every answer — filename, chunk, relevance score, preview
+- Document-scoped retrieval — query all docs or pin a single document
+- Any OpenAI-compatible LLM (Groq, LM Studio, OpenAI, Ollama, vLLM)
+
+**Document Management**
+- PDF upload → text extraction → chunking → embedding → dual-indexed
+- Knowledge base browser with page count, chunk count, upload date
+- Atomic deletion from PostgreSQL, Qdrant, and BM25 corpus
+
+**Conversations**
+- Persistent history stored in PostgreSQL
+- Rename, delete, and pin conversations
+- Full Markdown rendering (tables, code blocks, lists)
+
+**Auth & Access Control**
+- Stateless JWT with automatic expiry and logout
+- Four RBAC roles: Admin · HR · Finance · Employee
+- Route-level guards on both frontend and backend
+
+**Platform**
+- `/health/detail` — live per-service status (DB, Qdrant, LLM, BM25)
+- `/metrics` — documents, conversations, questions, chunks
+- Animated dark/light theme toggle, system-aware
+- Responsive layout — mobile sidebar, collapsible panels
+- Docker + Docker Compose for local development
+
+---
+
+## Tech Stack
+
+**Backend**
+
+| | Technology |
+|-|-----------|
+| Framework | FastAPI 0.139 + Uvicorn |
+| Language | Python 3.12+ |
+| ORM / Migrations | SQLAlchemy 2.0 + Alembic |
+| Database driver | psycopg v3 |
+| Vector store | Qdrant Cloud |
+| Sparse search | rank-bm25 (BM25Okapi) |
+| Embeddings | sentence-transformers (`BAAI/bge-m3`, `all-MiniLM-L6-v2`) |
+| LLM | OpenAI-compatible REST API |
+| Auth | python-jose (JWT) + bcrypt |
+| Container | Docker |
+
+**Frontend**
+
+| | Technology |
+|-|-----------|
+| Framework | React 19 + Vite |
+| Language | TypeScript 5 |
+| Styling | Tailwind CSS v3 |
+| Routing | React Router v7 |
+| Icons | Lucide React |
+| UI primitives | Radix UI + class-variance-authority |
+| Streaming | Fetch SSE with async generators |
+
+**Infrastructure**
+
+| Service | Provider |
+|---------|---------|
+| Frontend | Vercel |
+| Backend | Render (Docker) |
 | Vector DB | Qdrant Cloud |
-| Retrieval | Dense + BM25 Hybrid Search |
-| LLM | Groq (Llama 3.1 8B Instant) |
-| Deployment | Render + Vercel |
+| Relational DB | Supabase / Render PostgreSQL |
+| CI/CD | GitHub → Vercel + Render auto-deploy |
 
 ---
 
-# 📁 Project Structure
+## Folder Structure
 
-```text
-backend/
-frontend/
-docker/
-docs/
-README.md
-docker-compose.yml
-requirements.txt
+```
+enterprise-rag/
+├── backend/
+│   ├── src/app/
+│   │   ├── application/          # Business logic — RAG, auth, conversation services
+│   │   ├── domain/               # Pure domain models (User, Conversation, roles)
+│   │   ├── infrastructure/       # Adapters — Qdrant, BM25, PostgreSQL, JWT, config
+│   │   └── presentation/api/     # FastAPI routes + Pydantic schemas
+│   ├── alembic/                  # Database migrations
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+├── frontend/
+│   ├── src/
+│   │   ├── app/                  # Root router
+│   │   ├── components/           # Shared layout (AppShell, AppHeader) + UI
+│   │   ├── features/             # Feature-folder architecture
+│   │   │   ├── auth/             # Login, Register, JWT context, RBAC guards
+│   │   │   ├── chat/             # Streaming chat UI, citation cards
+│   │   │   ├── conversations/    # Sidebar, history, rename/pin/delete
+│   │   │   ├── dashboard/        # Health + metrics dashboard
+│   │   │   ├── documents/        # Upload dropzone, knowledge base panel
+│   │   │   └── theme/            # Dark/light ThemeProvider
+│   │   └── shared/               # API client, toast, config
+│   └── vercel.json               # SPA routing + API proxy
+│
+├── docs/
+│   ├── assets/                   # Banner, logo
+│   ├── diagrams/                 # Architecture diagrams
+│   ├── images/                   # Screenshots
+│   ├── API.md                    # Full API reference
+│   ├── DEPLOYMENT.md             # Render + Vercel deployment guide
+│   └── SETUP.md                  # Environment variables reference
+│
+└── docker-compose.yml
 ```
 
 ---
 
-# 🚀 Getting Started
+## Quick Start
+
+### Prerequisites
+- Python 3.12+ · Node.js 18+ · Docker
+- An OpenAI-compatible LLM endpoint (Groq, LM Studio, or OpenAI)
+
+### 1. Clone & start infrastructure
 
 ```bash
 git clone https://github.com/Ayushrana1704/enterprise-rag.git
-
 cd enterprise-rag
-
-docker compose up --build
+docker-compose up -d          # starts PostgreSQL + Qdrant locally
 ```
 
----
+### 2. Backend
 
-# 🔐 Environment Variables
-
-Create a `.env` file using `.env.example`.
-
-Configure:
-
-- PostgreSQL
-- Groq API
-- Qdrant Cloud
-- JWT Secret
-- Frontend API URL
-
----
-
-# 🏗 Architecture
-
-```text
-React
-   │
-FastAPI
-   │
-Authentication
-   │
-Upload Service
-   │
-PDF Processing
-   │
-Chunking
-   │
-Embeddings
-   │
-Qdrant + BM25
-   │
-Groq
-   │
-Streaming Response
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+cp .env.example .env          # edit LLM_BASE_URL, LLM_API_KEY, DATABASE_URL
+alembic upgrade head
+uvicorn src.app.main:app --reload --port 8000
 ```
 
----
+API at `http://localhost:8000` · Swagger at `http://localhost:8000/docs`
 
-# 📈 Roadmap
+A default admin is seeded: `admin@enterprise.com` / `admin123`
 
-- [x] Authentication
-- [x] Hybrid Retrieval
-- [x] Multi-document Knowledge Base
-- [x] Streaming Chat
-- [x] Cloud Deployment
-- [ ] OCR Support
-- [ ] DOCX Support
-- [ ] Excel Support
-- [ ] Analytics Dashboard
-- [ ] Role Based Access Control
+### 3. Frontend
 
----
+```bash
+cd frontend
+npm install
+npm run dev                   # http://localhost:5173
+```
 
-# 📄 License
-
-MIT License.
+> See [docs/SETUP.md](docs/SETUP.md) for the full environment variable reference and LLM provider examples.
+> See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for Render + Vercel production deployment.
 
 ---
 
-# 👨‍💻 Author
+## Roadmap
 
-**Ayush Rana**
+- [ ] Multi-file batch upload with progress tracking
+- [ ] Cross-encoder reranking pass after RRF fusion
+- [ ] Weighted RRF — tunable dense/sparse weights via settings
+- [ ] Admin panel — user management, corpus analytics
+- [ ] OAuth2 / SSO — Google and Microsoft Entra
+- [ ] DOCX and TXT ingestion support
+- [ ] Conversation export (PDF / Markdown)
+- [ ] OpenTelemetry traces + Grafana dashboards
+- [ ] RAGAS-based evaluation harness
 
-- GitHub: https://github.com/Ayushrana1704
-- Project: https://github.com/Ayushrana1704/enterprise-rag
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE)
+
+---
+
+<div align="center">
+
+**Author:** [Ayush Rana](https://github.com/Ayushrana1704)
+
+Built with FastAPI · React · Qdrant · sentence-transformers · BM25 · PostgreSQL
+
+*Star the repository if this project helped you ⭐*
+
+</div>

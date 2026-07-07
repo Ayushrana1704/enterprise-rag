@@ -119,16 +119,16 @@ export function AppHeader() {
             </span>
           </Button>
 
-          {/* Logout button */}
+          {/* Logout button — icon + label for clear visibility */}
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
             onClick={logout}
             aria-label="Log out"
-            title="Log out"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
           >
             <LogOut className="h-4 w-4" />
+            Logout
           </Button>
 
         </div>
