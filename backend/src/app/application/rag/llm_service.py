@@ -109,23 +109,27 @@ class LLMService:
             answer: str = response.json()["choices"][0]["message"]["content"]
 
         except requests.Timeout as e:
-            logger.error("LLM request timed out after %ds: model=%s", self.timeout, self.model)
+            logger.error("LLM request timed out after %ds: provider=%s, model=%s", self.timeout, self.provider, self.model)
             raise LLMError("LLM request timed out") from e
 
         except requests.ConnectionError as e:
-            logger.error("LLM service unreachable: url=%s", self.url)
+            logger.error("LLM service unreachable: provider=%s, url=%s", self.provider, self.url)
             raise LLMError("LLM service is unreachable") from e
 
         except requests.HTTPError as e:
+            # Log the full response body so we can diagnose provider-side errors.
+            body = e.response.text if e.response is not None else "<no body>"
             logger.error(
-                "LLM returned HTTP error: status=%s, model=%s",
+                "LLM returned HTTP error: status=%s, provider=%s, model=%s, body=%s",
                 e.response.status_code,
+                self.provider,
                 self.model,
+                body,
             )
             raise LLMError(f"LLM returned HTTP {e.response.status_code}") from e
 
         except (KeyError, IndexError) as e:
-            logger.error("Unexpected LLM response format: %s", e)
+            logger.error("Unexpected LLM response format: provider=%s, error=%s", self.provider, e)
             raise LLMError("Unexpected LLM response format") from e
 
         logger.info("LLM response received: %d chars", len(answer))
@@ -177,7 +181,26 @@ class LLMService:
                     json=payload,
                     timeout=self.timeout,
                 ) as response:
-                    response.raise_for_status()
+                    # For streaming responses, raise_for_status() is called
+                    # before the body is read, so the HTTPStatusError has no
+                    # body attached.  Instead, check the status code manually
+                    # and read the full error body before raising so we can
+                    # log exactly what the provider rejected.
+                    if response.status_code >= 400:
+                        body = await response.aread()
+                        error_text = body.decode("utf-8", errors="replace")
+                        logger.error(
+                            "LLM HTTP %s from provider: provider=%s, model=%s, url=%s, body=%s",
+                            response.status_code,
+                            self.provider,
+                            self.model,
+                            self.url,
+                            error_text,
+                        )
+                        raise LLMError(
+                            f"LLM returned HTTP {response.status_code}: {error_text}"
+                        )
+
                     async for line in response.aiter_lines():
                         if not line.startswith("data: "):
                             continue
@@ -195,22 +218,19 @@ class LLMService:
 
         except httpx.TimeoutException as e:
             logger.error(
-                "LLM streaming request timed out after %ds: model=%s",
+                "LLM streaming request timed out after %ds: provider=%s, model=%s",
                 self.timeout,
+                self.provider,
                 self.model,
             )
             raise LLMError("LLM request timed out") from e
 
         except httpx.ConnectError as e:
-            logger.error("LLM service unreachable during streaming: url=%s", self.url)
+            logger.error("LLM service unreachable during streaming: provider=%s, url=%s", self.provider, self.url)
             raise LLMError("LLM service is unreachable") from e
 
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                "LLM returned HTTP error during streaming: status=%s, model=%s",
-                e.response.status_code,
-                self.model,
-            )
-            raise LLMError(f"LLM returned HTTP {e.response.status_code}") from e
+        except LLMError:
+            # Re-raise LLMError raised by the status-check block above -- do not wrap it again.
+            raise
 
-        logger.info("LLM streaming response complete")
+        logger.info("LLM streaming response complete: provider=%s, model=%s", self.provider, self.model)
