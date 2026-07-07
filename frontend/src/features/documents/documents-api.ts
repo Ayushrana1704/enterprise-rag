@@ -42,3 +42,14 @@ export async function uploadDocument(
 export async function listDocuments(client: ApiClient): Promise<DocumentItem[]> {
   return client.get<DocumentItem[]>("/documents")
 }
+
+/**
+ * Permanently delete a document and all its indexed data.
+ * Maps to: DELETE /documents/{document_id}
+ *
+ * Returns void on success (204 No Content).
+ * Throws ApiError on failure (404 if not found / not owned, 5xx on server error).
+ */
+export async function deleteDocument(client: ApiClient, documentId: string): Promise<void> {
+  return client.delete<void>(`/documents/${documentId}`)
+}

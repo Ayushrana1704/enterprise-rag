@@ -1,14 +1,13 @@
 """BM25 indexing service.
 
 Wraps ``rank_bm25.BM25Okapi`` with:
-  - structured per-document metadata (filename, user_id)
+  - structured per-document metadata (filename, user_id, document_id)
   - corpus persistence to a JSON file so the index survives restarts
-  - thread-safe mutations for concurrent upload requests
-  - optional per-user scoping that mirrors the Qdrant payload filter
+  - thread-safe mutations for concurrent upload/delete requests
+  - optional per-user and per-document scoping that mirrors Qdrant payload filters
 
 This service is intentionally isolated from the dense retrieval path.
 It has no dependency on QdrantService or EmbeddingService.
-The fusion layer (Phase 5.5B) will combine results from both services.
 """
 
 import json
@@ -40,7 +39,7 @@ class BM25Document:
 
 
 # ---------------------------------------------------------------------------
-# Result model — structured for future fusion compatibility
+# Result model -- structured for fusion compatibility
 # ---------------------------------------------------------------------------
 
 @dataclass(frozen=True)
@@ -48,8 +47,8 @@ class BM25Result:
     """A retrieved chunk with its BM25 relevance score.
 
     Field layout mirrors the ``payload`` dict on Qdrant's ``ScoredPoint``
-    so the upcoming fusion layer can work with a uniform interface across
-    both retrieval strategies.
+    so the fusion layer can work with a uniform interface across both
+    retrieval strategies.
     """
     text: str
     filename: str
@@ -62,11 +61,7 @@ class BM25Result:
 # ---------------------------------------------------------------------------
 
 def _tokenize(text: str) -> list[str]:
-    """Lowercase and split on non-alphanumeric characters.
-
-    Intentionally simple for PR 13A.  The tokenizer is the single place to
-    improve (stemming, stopword removal) without changing any callers.
-    """
+    """Lowercase and split on non-alphanumeric characters."""
     return re.findall(r"\w+", text.lower())
 
 
@@ -81,25 +76,22 @@ class BM25Service:
     ---------
     On construction the service loads any previously persisted corpus from
     ``corpus_path`` and rebuilds the in-memory index.  This means the index
-    is ready immediately after the FastAPI app starts — no warm-up request
+    is ready immediately after the FastAPI app starts -- no warm-up request
     required.
 
-    On ``add_documents`` the corpus is extended, the index is rebuilt, and
-    the corpus is flushed to disk atomically (write to a tmp file, then rename).
+    On ``add_documents`` / ``delete_by_document`` the corpus is mutated, the
+    index is rebuilt, and the corpus is flushed to disk atomically (write to a
+    tmp file, then rename).
 
     Scoping
     -------
-    ``search(user_id=None)``  → uses the pre-built global index (all docs).
-    ``search(user_id="x")``   → builds a temporary per-query index scoped to
-                                 that user's documents; correct BM25 statistics
-                                 are computed on the filtered sub-corpus, which
-                                 mirrors Qdrant's pre-retrieval payload filter.
+    ``search(user_id=None, document_id=None)``  -> global index (all docs).
+    ``search(user_id="x")``                     -> scoped to that user's docs.
+    ``search(user_id="x", document_id="y")``    -> scoped to one document.
 
     Concurrency
     -----------
-    A single ``threading.Lock`` guards all mutations.  Read-heavy workloads
-    can be improved with a read-write lock in a future phase; for now
-    simplicity is preferred over micro-optimisation.
+    A single ``threading.Lock`` guards all mutations.
     """
 
     def __init__(self, corpus_path: Path) -> None:
@@ -137,7 +129,12 @@ class BM25Service:
         with self._lock:
             for chunk in chunks:
                 self._corpus.append(
-                    BM25Document(text=chunk, filename=filename, user_id=user_id, document_id=document_id)
+                    BM25Document(
+                        text=chunk,
+                        filename=filename,
+                        user_id=user_id,
+                        document_id=document_id,
+                    )
                 )
             self._rebuild_index()
             self._persist()
@@ -147,10 +144,36 @@ class BM25Service:
             len(chunks), filename, user_id or "anonymous", document_id or "none", len(self._corpus),
         )
 
+    def delete_by_document(self, document_id: str, user_id: str) -> int:
+        """Remove every corpus entry matching both ``document_id`` and ``user_id``.
+
+        Rebuilds the global index and persists the updated corpus after removal.
+        Returns the number of chunks removed (0 is valid -- nothing to do).
+
+        The ``user_id`` guard mirrors the double-keyed Qdrant filter: we never
+        remove chunks belonging to another user even if document_ids collide.
+        """
+        with self._lock:
+            before = len(self._corpus)
+            self._corpus = [
+                d for d in self._corpus
+                if not (d.document_id == document_id and d.user_id == user_id)
+            ]
+            removed = before - len(self._corpus)
+            if removed > 0:
+                self._rebuild_index()
+                self._persist()
+
+        logger.info(
+            "BM25: removed %d chunks for document_id=%s user_id=%s (corpus total=%d)",
+            removed, document_id, user_id, len(self._corpus),
+        )
+        return removed
+
     def stats(self) -> tuple[int, int]:
         """Return (unique_documents, total_chunks) from the in-memory corpus.
 
-        Thread-safe read — acquires the lock briefly.
+        Thread-safe read -- acquires the lock briefly.
         Used by the /metrics endpoint; does not touch disk or the index.
         """
         with self._lock:
@@ -168,9 +191,9 @@ class BM25Service:
         """Return the top-``limit`` chunks ranked by BM25Okapi score.
 
         Filter logic mirrors QdrantService.search():
-          user_id=None, document_id=None → global index (backward compat)
-          user_id="x",  document_id=None → filter by user only
-          user_id="x",  document_id="y"  → filter by user AND document
+          user_id=None, document_id=None -> global index (backward compat)
+          user_id="x",  document_id=None -> filter by user only
+          user_id="x",  document_id="y"  -> filter by user AND document
 
         When filtering, a temporary sub-corpus index is built so IDF statistics
         reflect only the relevant document set.
@@ -181,7 +204,7 @@ class BM25Service:
             return self._search_global(query, limit)
 
     # ------------------------------------------------------------------
-    # Private helpers — all called while _lock is held
+    # Private helpers -- all called while _lock is held
     # ------------------------------------------------------------------
 
     def _search_global(self, query: str, limit: int) -> list[BM25Result]:
@@ -239,8 +262,7 @@ class BM25Service:
     def _rebuild_index(self) -> None:
         """Rebuild the global BM25 index from the current corpus.
 
-        O(N) operation.  Called after every ``add_documents``.
-        For write-heavy workloads this can be replaced with batch indexing.
+        O(N) operation.  Called after every mutation (add or delete).
         """
         if not self._corpus:
             self._bm25 = None
@@ -282,7 +304,7 @@ class BM25Service:
             )
         except (OSError, json.JSONDecodeError, TypeError) as e:
             logger.error(
-                "BM25: failed to load corpus from '%s': %s — starting empty",
+                "BM25: failed to load corpus from '%s': %s -- starting empty",
                 self._corpus_path, e,
             )
             self._corpus = []

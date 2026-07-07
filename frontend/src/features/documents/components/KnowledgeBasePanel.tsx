@@ -5,15 +5,18 @@
  *  - TOP: Document browser — "All Documents" + per-document cards with selection.
  *  - BOTTOM: Upload section — compact dropzone + upload button.
  *
- * Selection state (selectedDocumentId / onSelectDocument) is owned by the parent
- * so it can be read by the chat layer without prop-drilling through two trees.
+ * Selection state (selectedDocumentId / onSelectDocument) and the document list
+ * are owned by the parent (ChatPage via useDocuments) so the chat layer can read
+ * selectedDocumentId without prop-drilling through two trees.
  *
- * The document list (documents, isLoading, onRefresh) is also owned by the parent
- * so the parent can trigger a refresh after a successful upload from any source.
+ * Each DocumentCard has three internal states:
+ *   idle      — shows the document info + a hover-reveal trash icon
+ *   confirm   — inline "Delete?" prompt with Yes / Cancel buttons
+ *   deleting  — spinner while the DELETE request is in flight
  */
 
-import { memo, useEffect, useRef } from "react"
-import { FileText, FileUp, Loader2, RefreshCw, Sparkles } from "lucide-react"
+import { memo, useCallback, useEffect, useRef, useState } from "react"
+import { FileText, FileUp, Loader2, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -34,6 +37,7 @@ export interface KnowledgeBasePanelProps {
   selectedDocumentId: string | null
   onSelectDocument: (id: string | null) => void
   onRefresh: () => void
+  onDeleteDocument: (id: string) => Promise<boolean>
 }
 
 // ---------------------------------------------------------------------------
@@ -53,30 +57,70 @@ function formatDate(iso: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Document card
+// DocumentCard — self-contained delete state machine
 // ---------------------------------------------------------------------------
+
+type CardState = "idle" | "confirm" | "deleting"
 
 interface DocumentCardProps {
   doc: DocumentItem
   isSelected: boolean
   onSelect: (id: string) => void
+  onDelete: (id: string) => Promise<boolean>
 }
 
-function DocumentCard({ doc, isSelected, onSelect }: DocumentCardProps) {
+function DocumentCard({ doc, isSelected, onSelect, onDelete }: DocumentCardProps) {
+  const [cardState, setCardState] = useState<CardState>("idle")
+
+  const handleTrashClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCardState("confirm")
+  }, [])
+
+  const handleConfirm = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      setCardState("deleting")
+      const ok = await onDelete(doc.document_id)
+      // If deletion failed, roll back to idle (parent shows the toast)
+      if (!ok) setCardState("idle")
+      // On success the card disappears from the list — no state update needed
+    },
+    [doc.document_id, onDelete],
+  )
+
+  const handleCancel = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    setCardState("idle")
+  }, [])
+
+  const isDeleting = cardState === "deleting"
+  const isConfirm = cardState === "confirm"
+
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(doc.document_id)}
-      aria-pressed={isSelected}
+    <div
       className={cn(
-        "w-full rounded-lg border px-3 py-2.5 text-left transition-colors",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative w-full rounded-lg border transition-colors",
         isSelected
-          ? "border-primary/40 bg-primary/10 text-foreground"
-          : "border-border bg-card hover:bg-accent hover:text-accent-foreground",
+          ? "border-primary/40 bg-primary/10"
+          : "border-border bg-card",
+        isDeleting && "opacity-60",
       )}
     >
-      <div className="flex items-start gap-2">
+      {/* Main clickable area */}
+      <button
+        type="button"
+        onClick={() => !isConfirm && !isDeleting && onSelect(doc.document_id)}
+        aria-pressed={isSelected}
+        disabled={isDeleting}
+        className={cn(
+          "flex w-full items-start gap-2 px-3 py-2.5 text-left",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          !isConfirm && !isDeleting && "cursor-pointer",
+          (isConfirm || isDeleting) && "cursor-default",
+          !isSelected && !isConfirm && !isDeleting && "hover:bg-accent hover:text-accent-foreground",
+        )}
+      >
         <FileText
           className={cn(
             "mt-0.5 h-3.5 w-3.5 shrink-0",
@@ -90,8 +134,71 @@ function DocumentCard({ doc, isSelected, onSelect }: DocumentCardProps) {
             {formatDate(doc.created_at)} · {doc.page_count}p · {doc.chunk_count} chunks
           </p>
         </div>
-      </div>
-    </button>
+
+        {/* Trash icon — visible on hover in idle state only */}
+        {!isConfirm && !isDeleting && (
+          <button
+            type="button"
+            aria-label={`Delete ${doc.filename}`}
+            onClick={handleTrashClick}
+            className={cn(
+              "ml-1 shrink-0 rounded p-0.5",
+              "text-transparent transition-colors",
+              "group-hover:text-muted-foreground/50 group-hover:hover:text-destructive",
+              "focus-visible:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
+          >
+            <Trash2 className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
+
+        {/* Spinner while deleting */}
+        {isDeleting && (
+          <Loader2
+            className="ml-1 h-3 w-3 shrink-0 animate-spin text-muted-foreground"
+            aria-hidden="true"
+          />
+        )}
+      </button>
+
+      {/* Inline confirm prompt */}
+      {isConfirm && (
+        <div
+          className="border-t px-3 py-2"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <p className="mb-1.5 text-[11px] font-medium text-foreground">
+            Delete this document?
+          </p>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              onClick={handleConfirm}
+              className={cn(
+                "flex-1 rounded-md bg-destructive px-2 py-1",
+                "text-[11px] font-medium text-destructive-foreground",
+                "transition-colors hover:bg-destructive/90",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              )}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              onClick={handleCancel}
+              className={cn(
+                "flex-1 rounded-md border px-2 py-1",
+                "text-[11px] font-medium",
+                "transition-colors hover:bg-accent",
+                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              )}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -105,6 +212,7 @@ export const KnowledgeBasePanel = memo(function KnowledgeBasePanel({
   selectedDocumentId,
   onSelectDocument,
   onRefresh,
+  onDeleteDocument,
 }: KnowledgeBasePanelProps) {
   const { phase, selectFile, upload, reset } = useUpload()
   const { toast } = useToast()
@@ -113,7 +221,7 @@ export const KnowledgeBasePanel = memo(function KnowledgeBasePanel({
   const isUploading = phase.status === "uploading"
   const canUpload = phase.status === "ready"
 
-  // Toast on terminal state transitions + auto-refresh after successful upload
+  // Toast on upload terminal state transitions + auto-refresh after success
   const prevStatusRef = useRef(phase.status)
   useEffect(() => {
     const prev = prevStatusRef.current
@@ -128,6 +236,20 @@ export const KnowledgeBasePanel = memo(function KnowledgeBasePanel({
       toast(phase.message, "error")
     }
   }, [phase, onRefresh, toast])
+
+  // Wrap onDeleteDocument to show toast on failure
+  const handleDelete = useCallback(
+    async (id: string): Promise<boolean> => {
+      const ok = await onDeleteDocument(id)
+      if (ok) {
+        toast("Document deleted.", "success")
+      } else {
+        toast("Failed to delete document. Please try again.", "error")
+      }
+      return ok
+    },
+    [onDeleteDocument, toast],
+  )
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -202,6 +324,7 @@ export const KnowledgeBasePanel = memo(function KnowledgeBasePanel({
                 doc={doc}
                 isSelected={doc.document_id === selectedDocumentId}
                 onSelect={onSelectDocument}
+                onDelete={handleDelete}
               />
             </div>
           ))}
