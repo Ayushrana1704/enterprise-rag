@@ -28,33 +28,45 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
     logger.info("Application startup — initializing services")
     try:
         from app.infrastructure.database.seed import seed_admin
-        from app.presentation.api.dependencies import (
-            get_embedding_service,
-            get_qdrant_service,
-            get_rag_service,
-        )
+        from app.presentation.api.dependencies import get_qdrant_service
 
         # 1. Ensure the Qdrant collection exists before any request arrives.
         get_qdrant_service().create_collection()
 
         # 2. Ensure the default admin user exists on every startup.
-        #    seed_admin() is idempotent — it no-ops when the user is already present.
+        #    seed_admin() is idempotent -- it no-ops when the user is already present.
         seed_admin()
 
-        # 3. Force-initialize the full singleton chain so the embedding model is
-        #    loaded into memory now, not on the first user request.
+        # 3. Optionally pre-load the embedding model into memory now.
         #
-        #    get_rag_service() chain:
-        #      get_bm25_service() → loads BM25 corpus from disk
-        #      RetrievalService (internal EmbeddingService) → loads sentence-transformer
+        #    EMBED_PRELOAD=true  (default for local dev) -- model loads at startup so the
+        #                        first request is fast.  Requires enough RAM for the model.
         #
-        #    get_embedding_service() — the separate singleton used by the upload route;
-        #    the model itself is already loaded above, so this is a zero-cost registration.
-        get_rag_service()
-        get_embedding_service()
+        #    EMBED_PRELOAD=false (recommended for Render free tier / low-memory hosts) --
+        #                        the model is loaded lazily on the first embedding request.
+        #                        Use a small model (e.g. all-MiniLM-L6-v2) in production.
+        #
+        if settings.embed_preload:
+            from app.presentation.api.dependencies import (
+                get_embedding_service,
+                get_rag_service,
+            )
+            logger.info(
+                "EMBED_PRELOAD=true — loading embedding model '%s' at startup",
+                settings.embedding_model_name,
+            )
+            get_rag_service()
+            get_embedding_service()
+            logger.info("Embedding model ready.")
+        else:
+            logger.info(
+                "EMBED_PRELOAD=false — embedding model '%s' will load on first request",
+                settings.embedding_model_name,
+            )
 
     except Exception as e:
         logger.error("Startup failed during service initialization: %s", e)

@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,10 +35,30 @@ class Settings(BaseSettings):
     )
 
     # PostgreSQL
+    # The validator below normalises any postgresql:// or postgres:// URL to
+    # postgresql+psycopg:// so SQLAlchemy always uses the psycopg v3 driver.
+    # Supabase and Render provide plain postgresql:// connection strings by
+    # default; without this normalisation SQLAlchemy falls back to psycopg2.
     database_url: str = Field(
         default="postgresql+psycopg://enterprise:enterprise123@localhost:5432/enterprise_ai",
         alias="DATABASE_URL",
     )
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalise_database_url(cls, v: str) -> str:
+        """Ensure the URL always uses the psycopg v3 driver specifier.
+
+        Accepted inputs -> normalised output:
+          postgres://...            -> postgresql+psycopg://...
+          postgresql://...          -> postgresql+psycopg://...
+          postgresql+psycopg://...  -> unchanged (already correct)
+        """
+        if v.startswith("postgres://"):
+            return "postgresql+psycopg://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            return "postgresql+psycopg://" + v[len("postgresql://"):]
+        return v
 
     # Qdrant
     qdrant_host: str = Field(default="localhost", alias="QDRANT_HOST")
@@ -54,7 +74,25 @@ class Settings(BaseSettings):
     qdrant_api_key: str = Field(default="", alias="QDRANT_API_KEY")
 
     # Embedding
+    # ---------------------------------------------------------------------------
+    # EMBEDDING_MODEL_NAME
+    #   HuggingFace model ID for the sentence-transformer used to embed text.
+    #   The model must be registered in model_registry._EMBEDDING_VECTOR_DIMENSIONS.
+    #
+    #   Local dev (default):  BAAI/bge-m3            -- 1024-dim, ~1.5 GB RAM
+    #   Render free tier:     all-MiniLM-L6-v2        -- 384-dim,  ~90 MB RAM
+    #
+    #   IMPORTANT: changing this after documents have been indexed requires
+    #   deleting and recreating the Qdrant collection (dimension mismatch).
+    #
+    # EMBED_PRELOAD
+    #   true  -- load the embedding model at startup (fast first request,
+    #            needs enough free RAM for the model; default for local dev).
+    #   false -- load the model lazily on the first embedding request
+    #            (startup is fast and light; use on memory-constrained hosts).
+    # ---------------------------------------------------------------------------
     embedding_model_name: str = Field(default="BAAI/bge-m3", alias="EMBEDDING_MODEL_NAME")
+    embed_preload: bool = Field(default=True, alias="EMBED_PRELOAD")
 
     # ---------------------------------------------------------------------------
     # LLM
